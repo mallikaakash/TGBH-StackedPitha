@@ -3,7 +3,7 @@
 import React from 'react';
 import DriverDashboard from '@/components/DriverDashboard';
 
-export default function ProfileTabPanel() {
+export default function DriverDashboardPage() {
   // Default center location for Bangalore
   const defaultCenter: [number, number] = [12.9716, 77.5946];
   

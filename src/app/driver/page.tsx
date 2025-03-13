@@ -113,10 +113,10 @@ const DriverDashboard = () => {
                 <MapTabPanel rideRequests={rideRequests} center={center} />
               </Tab.Panel>
               <Tab.Panel>
-                <NotificationsTabPanel notifications={notifications} />
+                <NotificationsTabPanel />
               </Tab.Panel>
               <Tab.Panel>
-                <ProfileTabPanel center={center} />
+                <ProfileTabPanel />
               </Tab.Panel>
             </Tab.Panels>
           </Tab.Group>

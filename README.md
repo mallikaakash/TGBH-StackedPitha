@@ -1,36 +1,106 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Namma Driver App - Ride Classification System
+
+## Overview
+
+This project implements a sophisticated ride classification and fare calculation system for a driver app. The system classifies rides into different categories based on demand-supply dynamics, driver characteristics, and other factors, and calculates appropriate fares using real-world distance data.
+
+## Features
+
+### Ride Classification System
+
+The system classifies rides into the following categories:
+
+- **Premium**: High-demand, low-supply situations with experienced drivers (rating ≥ 4.7)
+- **Express**: High-demand rides or night rides requiring quick service
+- **Standard**: Regular rides with balanced demand-supply
+- **Economy**: Low-demand, high-supply rides offering cost-effective options
+
+Classification factors include:
+- Demand-supply ratio in the area
+- Time of day (with special handling for night rides)
+- Driver rating and experience
+- Vehicle type and quality
+
+### Dynamic Fare Calculation
+
+The fare calculation system incorporates multiple factors:
+
+- Base fare dependent on vehicle type (auto, car, premium)
+- Per-kilometer rates with distance calculated via Mapbox API
+- Dead mileage compensation (for distance to pickup)
+- Demand-supply based price multipliers
+- Time-of-day adjustments (rush hour, night)
+- Driver incentives for long distances
+- Fuel cost calculations based on vehicle mileage
+
+### Real-time Notifications
+
+The system includes a real-time notification component that:
+- Displays incoming ride requests with details
+- Shows countdown timers for request expiry
+- Provides audio alerts for new requests
+- Allows drivers to accept or decline rides
+- Displays ride type and estimated fare information
+
+## Technical Implementation
+
+### Technologies Used
+
+- React.js with TypeScript
+- Mapbox API for distance calculations
+- Tailwind CSS for styling
+
+### Key Components
+
+1. **Classification System**: Determines ride types based on multiple factors
+2. **Fare Calculation Engine**: Computes fares with incentives and adjustments
+3. **Mapbox Integration**: Provides accurate distance estimates
+4. **Notification System**: Delivers real-time ride requests
+
+### Distance Calculation
+
+Distances are calculated using:
+1. Mapbox Directions API (for accurate route distances)
+2. Haversine formula as a fallback (with adjustments for real-world routes)
+
+### Dead Mileage Calculation
+
+Our system includes a novel approach to dead mileage compensation:
+- Different compensation rates by vehicle type (60-80%)
+- Integration with driver history to optimize pickup assignments
+- Factored into driver incentives
 
 ## Getting Started
 
-First, run the development server:
+### Installation
+
+```bash
+npm install
+```
+
+### Environment Setup
+
+Create a `.env` file with your Mapbox API key:
+
+```
+NEXT_PUBLIC_MAPBOX_TOKEN=your_mapbox_token_here
+```
+
+### Running the App
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Usage
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. Navigate to the Notifications tab to see incoming ride requests
+2. Test the classification system by entering ride and driver IDs
+3. View detailed fare breakdowns for each ride
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Future Enhancements
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Machine learning model for predictive demand-supply mapping
+- Driver earnings predictions based on historical data
+- Advanced route optimization with traffic predictions
+- Integration with payment systems for seamless transactions
