@@ -1,4 +1,4 @@
-import { calculateDirectDistance, calculateDeadMileage } from './mapboxService';
+import { calculateDirectDistance, calculateDrivingDistance, calculateDeadMileage } from './mapboxService';
 
 interface Location {
   latitude: number;
@@ -11,6 +11,26 @@ interface RideDetails {
   driverLocation: Location;
   vehicleType: 'auto' | 'car' | 'premium';
   estimatedWaitTime: number; // in minutes
+}
+
+interface FareBreakdown {
+  baseFare: number;
+  distanceFare: number;
+  waitTimeFare: number;
+  incentive: number;
+  demandMultiplier: number;
+  fuelCost: number;
+  estimatedProfit: number;
+  incentiveBreakdown: {
+    longDistance: number;
+    deadMileage: number;
+    highDemand: number;
+  };
+}
+
+interface FareResult {
+  totalFare: number;
+  breakdown: FareBreakdown;
 }
 
 // Constants for fare calculation
@@ -86,186 +106,225 @@ const calculateDistance = (point1: Location, point2: Location): number => {
   return distance;
 };
 
-// Use Mapbox API to get accurate travel distance
-// Now calls the mapboxService implementation
-const getMapboxDistance = async (origin: Location, destination: Location): Promise<number> => {
-  console.log('Getting Mapbox distance for:', { origin, destination });
-  
+/**
+ * Use Mapbox API to get accurate travel distance
+ * 
+ * @param origin - Starting location
+ * @param destination - Ending location
+ * @returns Promise resolving to the distance in kilometers
+ */
+export const getMapboxDistance = async (origin: Location, destination: Location): Promise<number> => {
+  console.log('Getting Mapbox distance between:', {
+    origin: `${origin.latitude},${origin.longitude}`,
+    destination: `${destination.latitude},${destination.longitude}`
+  });
+
   try {
-    const MAPBOX_TOKEN = process.env.MAPBOX_ACCESS_TOKEN;
-    const origin="77.623276,12.933456";
-    const destination="77.64106,12.972655";
+    // Use the calculateDrivingDistance function from mapboxService
+    const distance = await calculateDrivingDistance(origin, destination);
+    console.log('Mapbox API returned distance (km):', distance);
     
-    console.log('Using coordinates:', { origin, destination });
+    // Apply a small multiplier to account for real-world conditions
+    const adjustedDistance = distance * 1.2;
+    console.log('Adjusted distance with 1.2 multiplier (km):', adjustedDistance);
     
-    // Construct the Mapbox Directions API URL
-    const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${origin};${destination}?access_token=${MAPBOX_TOKEN}`;
-    console.log('Mapbox API URL:', url);
-
-    const response = await fetch(url);
-    console.log("API response status:", response.status);
-    
-    if (!response.ok) {
-      throw new Error(`Mapbox API error: ${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    console.log('Mapbox API response data:', data);
-
-    if (!data.routes || data.routes.length === 0) {
-      throw new Error('No routes found');
-    }
-
-    // Mapbox returns distance in meters, convert to kilometers
-    const distanceInKm = data.routes[0].distance / 1000;
-    console.log("Final Mapbox distance (km):", distanceInKm);
-    return distanceInKm;
-
+    return adjustedDistance;
   } catch (error) {
     console.error('Error calculating Mapbox distance:', error);
-    // Fallback to Haversine distance calculation with 20% buffer
-    const fallbackDistance = calculateDistance(origin, destination) * 1.2;
-    console.log('Using fallback distance calculation:', fallbackDistance);
+    
+    // Fallback to direct distance calculation with a 1.2 multiplier for real-world routes
+    const directDistance = calculateDirectDistance(origin, destination);
+    const fallbackDistance = directDistance * 1.2;
+    console.log('Using fallback direct distance calculation (km):', fallbackDistance);
+    
     return fallbackDistance;
   }
 };
 
-// Calculate driver incentive based on various factors
+/**
+ * Calculate driver incentive based on various factors
+ * 
+ * @param rideDetails - Details about the ride
+ * @param distance - Distance of the ride in kilometers
+ * @param deadMileage - Distance to pickup in kilometers
+ * @param demandLevel - Current demand level (0-1)
+ * @returns Driver incentive amount and breakdown
+ */
 const calculateDriverIncentive = (
   rideDetails: RideDetails,
   distance: number,
   deadMileage: number,
   demandLevel: number
-): number => {
-  console.log('Calculating driver incentive:', { rideDetails, distance, deadMileage, demandLevel });
-  
+): { total: number, breakdown: { longDistance: number, deadMileage: number, highDemand: number } } => {
+  console.log('Calculating driver incentives for:', {
+    vehicleType: rideDetails.vehicleType,
+    distance,
+    deadMileage,
+    demandLevel
+  });
+
   const { vehicleType } = rideDetails;
-  let incentive = 0;
   
-  // Long distance incentive
+  // Initialize incentive components
+  let longDistanceIncentive = 0;
+  let deadMileageIncentive = 0;
+  let highDemandIncentive = 0;
+  
+  // Long distance incentive - rewards drivers who take longer trips
   if (distance > 10) {
-    const longDistanceBonus = Math.min(distance - 10, 30) * 3;
-    console.log('Long distance bonus:', longDistanceBonus);
-    incentive += longDistanceBonus;
+    longDistanceIncentive = Math.min(distance - 10, 30) * 3; // Up to 30km extra at ₹3 per km
+    console.log('Long distance incentive:', longDistanceIncentive);
   }
   
-  // Dead mileage incentive
+  // Dead mileage incentive - compensates drivers who travel far to pick up
   const deadMileageCompensation = deadMileage * DEAD_MILEAGE_COMPENSATION[vehicleType];
-  const deadMileageBonus = deadMileageCompensation * RATES.DISTANCE_RATE[vehicleType] * 0.5;
-  console.log('Dead mileage bonus:', deadMileageBonus);
-  incentive += deadMileageBonus;
+  deadMileageIncentive = Math.round(deadMileageCompensation * RATES.DISTANCE_RATE[vehicleType] * 0.5);
+  console.log('Dead mileage incentive:', deadMileageIncentive);
   
   // High demand incentive
   if (demandLevel > 0.7) {
-    const demandBonus = distance * 2;
-    console.log('High demand bonus:', demandBonus);
-    incentive += demandBonus;
+    highDemandIncentive = Math.round(distance * 2); // ₹2 per km during high demand
+    console.log('High demand incentive:', highDemandIncentive);
   }
   
-  const efficiencyBonus = 10;
-  console.log('Efficiency bonus:', efficiencyBonus);
-  
-  const totalIncentive = Math.round(incentive + efficiencyBonus);
+  // Calculate total incentive
+  const totalIncentive = Math.round(longDistanceIncentive + deadMileageIncentive + highDemandIncentive);
   console.log('Total driver incentive:', totalIncentive);
-  return totalIncentive;
+  
+  return {
+    total: totalIncentive,
+    breakdown: {
+      longDistance: longDistanceIncentive,
+      deadMileage: deadMileageIncentive,
+      highDemand: highDemandIncentive
+    }
+  };
 };
 
-// Determine demand-supply multiplier
+/**
+ * Determine demand-supply multiplier based on current market conditions
+ */
 const getDemandSupplyMultiplier = (
   demandLevel: number, 
   supplyLevel: number
 ): number => {
-  console.log('Calculating demand-supply multiplier:', { demandLevel, supplyLevel });
+  console.log('Calculating demand-supply multiplier for:', { demandLevel, supplyLevel });
   
   let multiplier = 1.0;
-  if (demandLevel > 0.7 && supplyLevel < 0.3) multiplier = 1.5;
-  else if (demandLevel > 0.7 && supplyLevel >= 0.3) multiplier = 1.2;
-  else if (demandLevel > 0.5 && supplyLevel < 0.5) multiplier = 1.1;
-  else if (demandLevel < 0.3 && supplyLevel < 0.3) multiplier = 0.9;
-  else if (demandLevel < 0.3 && supplyLevel > 0.7) multiplier = 0.8;
+  
+  if (demandLevel > 0.7 && supplyLevel < 0.3) multiplier = 1.5; // High demand, low supply
+  else if (demandLevel > 0.7 && supplyLevel >= 0.3) multiplier = 1.2; // High demand, adequate supply
+  else if (demandLevel > 0.5 && supplyLevel < 0.5) multiplier = 1.1; // Medium demand, low supply
+  else if (demandLevel < 0.3 && supplyLevel < 0.3) multiplier = 0.9; // Low demand, low supply
+  else if (demandLevel < 0.3 && supplyLevel > 0.7) multiplier = 0.8; // Low demand, high supply
   
   console.log('Final demand-supply multiplier:', multiplier);
   return multiplier;
 };
 
-// Calculate fuel cost based on distance and vehicle mileage
+/**
+ * Calculate fuel cost based on distance and vehicle mileage
+ */
 const calculateFuelCost = (distance: number, vehicleType: 'auto' | 'car' | 'premium'): number => {
-  console.log('Calculating fuel cost:', { distance, vehicleType });
+  console.log('Calculating fuel cost for:', { distance, vehicleType });
   
   const fuelConsumed = distance / VEHICLE_MILEAGE[vehicleType];
-  console.log('Fuel consumed (liters):', fuelConsumed);
+  console.log('Estimated fuel consumed (liters):', fuelConsumed.toFixed(2));
   
   const cost = fuelConsumed * FUEL_PRICE;
-  console.log('Total fuel cost:', cost);
-  return cost;
+  console.log('Total fuel cost (₹):', cost.toFixed(2));
+  
+  return Math.round(cost);
 };
 
 /**
- * Calculate the dynamic fare for a ride
+ * Calculate the dynamic fare for a ride asynchronously
+ * 
+ * @param rideDetails - Details about the ride including locations and vehicle type
+ * @param demandLevel - The demand level (0-1) where 1 is highest demand
+ * @param supplyLevel - The supply level (0-1) where 1 is highest supply
+ * @returns Promise resolving to fare details including total and breakdown
  */
-export const calculateDynamicFare = (
+export const calculateDynamicFare = async (
   rideDetails: RideDetails,
   demandLevel: number = 0.5,
   supplyLevel: number = 0.5
-): {
-  totalFare: number;
-  breakdown: {
-    baseFare: number;
-    distanceFare: number;
-    waitTimeFare: number;
-    incentive: number;
-    demandMultiplier: number;
-    fuelCost: number;
-    estimatedProfit: number;
-  };
-} => {
-  console.log('Calculating dynamic fare:', { rideDetails, demandLevel, supplyLevel });
-  
+): Promise<FareResult> => {
+  console.log('Starting dynamic fare calculation:', { 
+    pickupLocation: rideDetails.pickupLocation,
+    dropoffLocation: rideDetails.dropoffLocation,
+    vehicleType: rideDetails.vehicleType,
+    demandLevel,
+    supplyLevel
+  });
+
   const { vehicleType, estimatedWaitTime } = rideDetails;
   
-  const routeDistance = calculateDistance(
+  // Step 1: Calculate route distance using the Mapbox API
+  console.log('Step 1: Calculating route distance using Mapbox API');
+  const routeDistance = await getMapboxDistance(
     rideDetails.pickupLocation,
     rideDetails.dropoffLocation
-  ) * 1.2;
-  console.log('Route distance (with 20% buffer):', routeDistance);
+  );
+  console.log('Route distance (km):', routeDistance);
   
-  const deadMileage = calculateDistance(
+  // Step 2: Calculate dead mileage - the distance driver travels to pickup
+  console.log('Step 2: Calculating dead mileage');
+  const deadMileage = await calculateDeadMileage(
     rideDetails.driverLocation,
     rideDetails.pickupLocation
   );
-  console.log('Dead mileage:', deadMileage);
+  console.log('Dead mileage (km):', deadMileage);
   
+  // Step 3: Calculate demand-supply multiplier
+  console.log('Step 3: Calculating demand-supply multiplier');
   const demandMultiplier = getDemandSupplyMultiplier(demandLevel, supplyLevel);
-  const incentive = calculateDriverIncentive(
+  
+  // Step 4: Calculate driver incentive
+  console.log('Step 4: Calculating driver incentives');
+  const incentiveResult = calculateDriverIncentive(
     rideDetails,
     routeDistance,
     deadMileage,
     demandLevel
   );
   
+  // Step 5: Calculate fuel cost
+  console.log('Step 5: Calculating fuel cost');
   const fuelCost = calculateFuelCost(routeDistance + deadMileage * 0.5, vehicleType);
   
+  // Step 6: Calculate fare components
+  console.log('Step 6: Calculating fare components');
   const baseFare = RATES.BASE_FARE[vehicleType];
-  console.log('Base fare:', baseFare);
+  console.log('Base fare (₹):', baseFare);
   
-  const distanceFare = routeDistance * RATES.DISTANCE_RATE[vehicleType];
-  console.log('Distance fare:', distanceFare);
+  const distanceFare = Math.round(routeDistance * RATES.DISTANCE_RATE[vehicleType]);
+  console.log('Distance fare (₹):', distanceFare);
   
-  const waitTimeFare = estimatedWaitTime * RATES.TIME_RATE[vehicleType];
-  console.log('Wait time fare:', waitTimeFare);
+  const waitTimeFare = Math.round(estimatedWaitTime * RATES.TIME_RATE[vehicleType]);
+  console.log('Wait time fare (₹):', waitTimeFare);
   
+  // Step 7: Calculate total fare
+  console.log('Step 7: Calculating final fare');
   const totalBeforeIncentive = Math.round(
     (baseFare + distanceFare + waitTimeFare) * demandMultiplier
   );
-  console.log('Total fare before incentive:', totalBeforeIncentive);
+  console.log('Total fare before incentives (₹):', totalBeforeIncentive);
   
-  const totalFare = totalBeforeIncentive + incentive;
-  console.log('Total fare with incentive:', totalFare);
+  const totalFare = totalBeforeIncentive + incentiveResult.total;
+  console.log('Total fare with incentives (₹):', totalFare);
+  
+  // Step 8: Calculate estimated profit for driver
+  console.log('Step 8: Calculating driver profit');
+  const platformFee = Math.round(totalFare * 0.20); // Platform fee of 20%
+  console.log('Platform fee (₹):', platformFee);
   
   const estimatedProfit = Math.round(
-    totalFare - fuelCost - (totalFare * 0.20)
+    totalFare - fuelCost - platformFee
   );
-  console.log('Estimated driver profit:', estimatedProfit);
+  console.log('Estimated driver profit (₹):', estimatedProfit);
+  
+  console.log('Fare calculation completed');
   
   return {
     totalFare,
@@ -273,7 +332,8 @@ export const calculateDynamicFare = (
       baseFare,
       distanceFare,
       waitTimeFare,
-      incentive,
+      incentive: incentiveResult.total,
+      incentiveBreakdown: incentiveResult.breakdown,
       demandMultiplier,
       fuelCost,
       estimatedProfit
@@ -281,27 +341,32 @@ export const calculateDynamicFare = (
   };
 };
 
-// Function to calculate fare for in-app display
-export const calculateFareForDisplay = (
+/**
+ * Calculate fare for in-app display
+ * 
+ * @param rideDetails - Details about the ride
+ * @param demandLevel - Current demand level (0-1)
+ * @param supplyLevel - Current supply level (0-1)
+ * @returns Promise resolving to fare display information
+ */
+export const calculateFareForDisplay = async (
   rideDetails: RideDetails,
   demandLevel: number = 0.5,
   supplyLevel: number = 0.5
-): {
+): Promise<{
   fare: number;
   currency: string;
   estimated: boolean;
-} => {
-  console.log('Calculating fare for display:', { rideDetails, demandLevel, supplyLevel });
+  breakdown?: FareBreakdown;
+}> => {
+  console.log('Calculating fare for display');
   
-  const fareResult = calculateDynamicFare(rideDetails, demandLevel, supplyLevel);
-  console.log('Fare calculation result:', fareResult);
+  const fareResult = await calculateDynamicFare(rideDetails, demandLevel, supplyLevel);
   
-  const displayResult = {
+  return {
     fare: fareResult.totalFare,
-    currency: "₹",
-    estimated: true
+    currency: "₹", // Indian Rupee symbol
+    estimated: true, // Indicate this is an estimate
+    breakdown: fareResult.breakdown
   };
-  console.log('Final display result:', displayResult);
-  
-  return displayResult;
 };
