@@ -2,22 +2,14 @@
  * Mapbox API Service
  * 
  * This module provides utility functions for interacting with the Mapbox API
- * for distance calculations, directions, and other location-based services.
+ * for distance calculations and location-based services.
  */
 
-// Mapbox access token - Replace with your actual token
-// Ideally, this should be stored in an environment variable like process.env.NEXT_PUBLIC_MAPBOX_TOKEN
 const MAPBOX_TOKEN = 'pk.eyJ1IjoiYWFrYXNobWFsbGlrIiwiYSI6ImNtODc5cHZ0aDBlZjMyaXNlcGc3aXk5ZGMifQ.xYguCB_TJiuP55uWMAvUNA';
 
-interface Coordinates {
+export interface Coordinates {
   latitude: number;
   longitude: number;
-}
-
-interface RouteResponse {
-  distance: number;  // in meters
-  duration: number;  // in seconds
-  geometry: string;  // encoded polyline
 }
 
 /**
@@ -32,11 +24,8 @@ export const calculateDrivingDistance = async (
   destination: Coordinates
 ): Promise<number> => {
   try {
-    // Format coordinates for the Mapbox API (longitude,latitude format)
     const coordinates = `${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}`;
-    
-    // Use the driving-traffic profile for more realistic routing with traffic conditions
-    const url = `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${coordinates}?access_token=${MAPBOX_TOKEN}&geometries=polyline&overview=full`;
+    const url = `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${coordinates}?access_token=${MAPBOX_TOKEN}`;
     
     const response = await fetch(url);
     
@@ -46,18 +35,14 @@ export const calculateDrivingDistance = async (
     
     const data = await response.json();
     
-    // Check if routes were found
     if (!data.routes || data.routes.length === 0) {
       throw new Error('No routes found');
     }
     
-    // Return distance in kilometers (Mapbox returns meters)
-    return data.routes[0].distance / 1000;
+    return data.routes[0].distance / 1000; // Convert meters to kilometers
   } catch (error) {
     console.error('Error calculating driving distance:', error);
-    
-    // Fallback to direct distance calculation
-    return calculateDirectDistance(origin, destination) * 1.3; // Add 30% for real-world routes
+    return calculateDirectDistance(origin, destination) * 1.3;
   }
 };
 
@@ -83,6 +68,25 @@ export const calculateDirectDistance = (
   
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   return R * c;
+};
+
+/**
+ * Calculate the "dead mileage" - the distance a driver must travel to reach the pickup point
+ * 
+ * @param driverLocation - Current driver location
+ * @param pickupLocation - Pickup location
+ * @returns Promise resolving to the dead mileage distance in kilometers
+ */
+export const calculateDeadMileage = async (
+  driverLocation: Coordinates,
+  pickupLocation: Coordinates
+): Promise<number> => {
+  try {
+    return await calculateDrivingDistance(driverLocation, pickupLocation);
+  } catch (error) {
+    console.error('Error calculating dead mileage:', error);
+    return calculateDirectDistance(driverLocation, pickupLocation) * 1.3;
+  }
 };
 
 /**
@@ -194,25 +198,6 @@ export const getRouteDetails = async (
       geometry: "",
       trafficDensity: "unknown"
     };
-  }
-};
-
-/**
- * Calculate the "dead mileage" - the distance a driver must travel to reach the pickup point
- * 
- * @param driverLocation - Current driver location
- * @param pickupLocation - Pickup location
- * @returns Promise resolving to the dead mileage distance in kilometers
- */
-export const calculateDeadMileage = async (
-  driverLocation: Coordinates,
-  pickupLocation: Coordinates
-): Promise<number> => {
-  try {
-    return await calculateDrivingDistance(driverLocation, pickupLocation);
-  } catch (error) {
-    console.error('Error calculating dead mileage:', error);
-    return calculateDirectDistance(driverLocation, pickupLocation) * 1.3;
   }
 };
 
