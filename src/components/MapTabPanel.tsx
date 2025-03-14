@@ -27,7 +27,7 @@ const MapTabPanel: React.FC<MapTabPanelProps> = ({ rideRequests, center }) => {
         </div>
       </div>
       <div className="w-1/4 bg-slate-50 p-4 overflow-y-auto">
-        <div className="flex items-center justify-between mb-4">
+        {/* <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-bold text-slate-800">Available Rides</h3>
           <div className="flex items-center space-x-2">
             <button className="p-1.5 rounded-full bg-white shadow-sm hover:bg-blue-50 transition-colors">
@@ -37,8 +37,8 @@ const MapTabPanel: React.FC<MapTabPanelProps> = ({ rideRequests, center }) => {
               {rideRequests.length}
             </span>
           </div>
-        </div>
-        <div className="space-y-3">
+        </div> */}
+        {/* <div className="space-y-3">
           {rideRequests.map((ride) => (
             <div key={ride.id} className="bg-white p-4 rounded-lg shadow-sm hover:shadow-md transition-all border border-slate-100">
               <div className="flex justify-between items-start">
@@ -77,7 +77,7 @@ const MapTabPanel: React.FC<MapTabPanelProps> = ({ rideRequests, center }) => {
               </div>
             </div>
           ))}
-        </div>
+        </div> */}
       </div>
     </div>
   );
