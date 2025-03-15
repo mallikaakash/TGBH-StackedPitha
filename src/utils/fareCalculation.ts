@@ -73,7 +73,7 @@ export const getMapboxDistance = async (origin: Coordinates, destination: Coordi
   } catch (error) {
     console.error('Error calculating Mapbox distance:', error);
     const directDistance = calculateDirectDistance(origin, destination);
-    return directDistance * 1.2;
+    return directDistance * 1.05;
   }
 };
 

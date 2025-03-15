@@ -299,7 +299,7 @@ const Map: React.FC<MapProps> = ({ center, zoom }) => {
     })
       .setLngLat([driverLocation.lng, driverLocation.lat])
       .addTo(map.current);
-    
+
     // Update driver location when marker is dragged
     marker.on('dragend', () => {
       const lngLat = marker.getLngLat();
@@ -404,7 +404,7 @@ const Map: React.FC<MapProps> = ({ center, zoom }) => {
           'icon-allow-overlap': true
         }
       });
-      
+
       // Initial fetch of hotspots
       fetchHotspots();
     });
@@ -474,7 +474,7 @@ const Map: React.FC<MapProps> = ({ center, zoom }) => {
     
     popupRef.current = new mapboxgl.Popup()
       .setLngLat([hotspot.longitude, hotspot.latitude])
-      .setHTML(`
+          .setHTML(`
         <div style="font-family: Arial, sans-serif; padding: 10px; max-width: 250px;">
           <h3 style="margin: 0 0 8px 0; color: ${demandColor}; font-weight: bold; font-size: 16px;">${name}</h3>
           <p style="margin: 0 0 5px 0; font-size: 12px; color: #666;">${description}</p>
@@ -485,8 +485,8 @@ const Map: React.FC<MapProps> = ({ center, zoom }) => {
           <p style="margin: 8px 0 0 0; font-size: 12px;">
             Coordinates: ${hotspot.latitude.toFixed(4)}, ${hotspot.longitude.toFixed(4)}
           </p>
-        </div>
-      `)
+            </div>
+          `)
       .addTo(map.current);
   };
 
@@ -523,8 +523,8 @@ const Map: React.FC<MapProps> = ({ center, zoom }) => {
                 const demandColor = getDemandColor(hotspot.demand_score);
                 const demandLevel = getDemandLevel(hotspot.demand_score);
                 const [name, description] = hotspot.hotspot.split(' - ');
-                
-                return (
+
+  return (
                   <div 
                     key={index} 
                     className={`
