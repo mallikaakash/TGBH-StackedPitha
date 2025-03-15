@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Bell, MapPin, AlertCircle, Car, Clock, DollarSign, Zap, Award, Info } from 'lucide-react';
+import { Bell, MapPin, AlertCircle, Car, Clock, DollarSign, Zap, Award, Info, User } from 'lucide-react';
 import { RideType, processRideRequest } from '@/utils/classification';
 
 // This interface should match the one in classification.tsx
@@ -10,15 +10,19 @@ interface RideNotification {
   driver_id: string;
   pickup: string;
   destination: string;
-  ride_type: RideType;
+  ride_type: string;
+  display_name: string;
   estimated_fare: number;
   estimated_profit: number;
+  compatibility_score: number;
+  compatibility_reason: string; // Simple explanation of why this ride matches the driver
   incentives: {
     total: number;
+    fare_component: number;
+    points_component: number;
+    points_earned: number;
     breakdown: {
-      longDistance?: number;
-      deadMileage?: number;
-      highDemand?: number;
+      surgePrice: number; // Only using surge pricing now
     }
   };
   message: string;
@@ -56,6 +60,7 @@ const Tooltip: React.FC<TooltipProps> = ({ text, children }) => {
 const NotificationsTabPanel: React.FC = () => {
   const [notifications, setNotifications] = useState<RideNotification[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [totalPoints, setTotalPoints] = useState<number>(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   
   useEffect(() => {
@@ -67,6 +72,7 @@ const NotificationsTabPanel: React.FC = () => {
       try {
         const initialNotification = await processRideRequest("1234", "24680");
         setNotifications([initialNotification as unknown as RideNotification]);
+        setTotalPoints(initialNotification.incentives.points_earned);
         setLoading(false);
       } catch (error) {
         console.error("Error initializing notifications:", error);
@@ -81,6 +87,7 @@ const NotificationsTabPanel: React.FC = () => {
       try {
         const newNotification = await processRideRequest("5678", "12345");
         setNotifications(prev => [...prev, newNotification as unknown as RideNotification]);
+        setTotalPoints(prev => prev + newNotification.incentives.points_earned);
         
         if (audioRef.current) {
           audioRef.current.play().catch(e => console.log('Audio play failed', e));
@@ -95,6 +102,7 @@ const NotificationsTabPanel: React.FC = () => {
       try {
         const newNotification = await processRideRequest("9876", "67890");
         setNotifications(prev => [...prev, newNotification as unknown as RideNotification]);
+        setTotalPoints(prev => prev + newNotification.incentives.points_earned);
         
         if (audioRef.current) {
           audioRef.current.play().catch(e => console.log('Audio play failed', e));
@@ -136,76 +144,68 @@ const NotificationsTabPanel: React.FC = () => {
   };
   
   const updateNotificationStatus = (id: string, status: 'accepted' | 'rejected' | 'started' | 'completed') => {
-    setNotifications(prev => prev.map(notif => 
-      notif.ride_id === id ? {...notif, status} : notif
-    ));
+    setNotifications(prev => {
+      const updated = prev.map(notif => 
+        notif.ride_id === id ? {...notif, status} : notif
+      );
+      
+      // If ride is completed, add the points to the total
+      if (status === 'completed') {
+        const completedRide = prev.find(notif => notif.ride_id === id);
+        if (completedRide) {
+          setTotalPoints(current => current + completedRide.incentives.points_earned);
+        }
+      }
+      
+      return updated;
+    });
   };
   
-  const getNotificationStyle = (type: RideType) => {
-    switch(type) {
-      case RideType.HighDemand:
-        return 'bg-red-50 border-red-200 text-red-800';
-      case RideType.LongDistance:
-        return 'bg-blue-50 border-blue-200 text-blue-800';
-      case RideType.NightRide:
-        return 'bg-purple-50 border-purple-200 text-purple-800';
-      case RideType.DriverMatch:
-        return 'bg-green-50 border-green-200 text-green-800';
-      case RideType.EconomySaver:
-        return 'bg-yellow-50 border-yellow-200 text-yellow-800';
-      default:
-        return 'bg-gray-50 border-gray-200 text-gray-800';
+  const getNotificationStyle = (type: string) => {
+    if (type.startsWith('HD_')) {
+      return 'bg-red-50 border-red-200 text-red-800';
+    } else if (type.startsWith('MD_')) {
+      return 'bg-blue-50 border-blue-200 text-blue-800';
+    } else if (type.startsWith('LD_')) {
+      return 'bg-green-50 border-green-200 text-green-800';
+    } else {
+      return 'bg-gray-50 border-gray-200 text-gray-800';
     }
   };
   
-  const getIconColor = (type: RideType) => {
-    switch(type) {
-      case RideType.HighDemand:
-        return 'text-red-600';
-      case RideType.LongDistance:
-        return 'text-blue-600';
-      case RideType.NightRide:
-        return 'text-purple-600';
-      case RideType.DriverMatch:
-        return 'text-green-600';
-      case RideType.EconomySaver:
-        return 'text-yellow-600';
-      default:
-        return 'text-slate-600';
+  const getIconColor = (type: string) => {
+    if (type.startsWith('HD_')) {
+      return 'text-red-600';
+    } else if (type.startsWith('MD_')) {
+      return 'text-blue-600';
+    } else if (type.startsWith('LD_')) {
+      return 'text-green-600';
+    } else {
+      return 'text-slate-600';
     }
   };
   
-  const getBadgeStyle = (type: RideType) => {
-    switch(type) {
-      case RideType.HighDemand:
-        return 'bg-red-200 text-red-800';
-      case RideType.LongDistance:
-        return 'bg-blue-200 text-blue-800';
-      case RideType.NightRide:
-        return 'bg-purple-200 text-purple-800';
-      case RideType.DriverMatch:
-        return 'bg-green-200 text-green-800';
-      case RideType.EconomySaver:
-        return 'bg-yellow-200 text-yellow-800';
-      default:
-        return 'bg-slate-200 text-slate-800';
+  const getBadgeStyle = (type: string) => {
+    if (type.startsWith('HD_')) {
+      return 'bg-red-200 text-red-800';
+    } else if (type.startsWith('MD_')) {
+      return 'bg-blue-200 text-blue-800';
+    } else if (type.startsWith('LD_')) {
+      return 'bg-green-200 text-green-800';
+    } else {
+      return 'bg-slate-200 text-slate-800';
     }
   };
   
-  const getButtonStyle = (type: RideType) => {
-    switch(type) {
-      case RideType.HighDemand:
-        return 'bg-red-600 hover:bg-red-700';
-      case RideType.LongDistance:
-        return 'bg-blue-600 hover:bg-blue-700';
-      case RideType.NightRide:
-        return 'bg-purple-600 hover:bg-purple-700';
-      case RideType.DriverMatch:
-        return 'bg-green-600 hover:bg-green-700';
-      case RideType.EconomySaver:
-        return 'bg-yellow-600 hover:bg-yellow-700';
-      default:
-        return 'bg-slate-600 hover:bg-slate-700';
+  const getButtonStyle = (type: string) => {
+    if (type.startsWith('HD_')) {
+      return 'bg-red-600 hover:bg-red-700';
+    } else if (type.startsWith('MD_')) {
+      return 'bg-blue-600 hover:bg-blue-700';
+    } else if (type.startsWith('LD_')) {
+      return 'bg-green-600 hover:bg-green-700';
+    } else {
+      return 'bg-slate-600 hover:bg-slate-700';
     }
   };
   
@@ -226,9 +226,54 @@ const NotificationsTabPanel: React.FC = () => {
     }
   };
   
+  const renderCompatibilityScore = (score: number) => {
+    let color = "";
+    let label = "";
+    
+    if (score >= 80) {
+      color = "bg-green-500";
+      label = "Excellent Match";
+    } else if (score >= 60) {
+      color = "bg-blue-500";
+      label = "Good Match";
+    } else if (score >= 40) {
+      color = "bg-yellow-500";
+      label = "Fair Match";
+    } else {
+      color = "bg-red-500";
+      label = "Poor Match";
+    }
+    
+    return (
+      <div className="flex items-center space-x-2">
+        <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+          <div 
+            className={`h-full ${color}`} 
+            style={{ width: `${score}%` }}
+          ></div>
+        </div>
+        <span className="text-xs font-semibold whitespace-nowrap">
+          {score}% - {label}
+        </span>
+      </div>
+    );
+  };
+  
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto">
-      <h3 className="text-lg sm:text-xl font-bold mb-4 sm:mb-6 text-slate-800">Ride Requests</h3>
+      <div className="flex justify-between items-center mb-4 sm:mb-6">
+        <h3 className="text-lg sm:text-xl font-bold text-slate-800">Ride Requests</h3>
+        <div className="bg-indigo-100 px-3 py-2 rounded-lg flex items-center">
+          <Award size={16} className="text-indigo-600 mr-2" />
+          <div>
+            <p className="text-xs text-indigo-800">Reward Points</p>
+            <p className="font-bold text-indigo-600">{totalPoints} pts</p>
+          </div>
+          <Tooltip text="Earn 1 point for every ₹10 of incentive. Accumulate 10 points for 1 day free subscription.">
+            <Info size={14} className="ml-2 text-indigo-400 cursor-help" />
+          </Tooltip>
+        </div>
+      </div>
       
       {loading ? (
         <div className="text-center py-8 sm:py-12">
@@ -257,7 +302,7 @@ const NotificationsTabPanel: React.FC = () => {
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="font-bold text-sm sm:text-base text-slate-800">New Ride Request</p>
                       <span className={`px-2 py-0.5 text-xs rounded-full font-semibold ${getBadgeStyle(notification.ride_type)}`}>
-                        {notification.ride_type}
+                        {notification.display_name}
                       </span>
                       {renderStatusBadge(notification.status)}
                     </div>
@@ -332,51 +377,55 @@ const NotificationsTabPanel: React.FC = () => {
                 </div>
               </div>
               
+              {/* Driver compatibility section */}
+              <div className="bg-green-50 p-2 sm:p-3 rounded-lg mb-3 sm:mb-4">
+                <div className="mb-2">
+                  <p className="text-xs font-semibold text-gray-700 flex items-center">
+                    <User size={12} className="mr-1 text-green-600" />
+                    Driver Match
+                  </p>
+                  {renderCompatibilityScore(notification.compatibility_score)}
+                </div>
+                <p className="text-xs text-gray-700 mt-1">{notification.compatibility_reason}</p>
+              </div>
+              
               {/* Incentives breakdown with tooltips */}
               <div className="bg-indigo-50 p-2 sm:p-3 rounded-lg mb-3 sm:mb-4">
-                <div className="flex items-center space-x-2 mb-2">
-                  <Zap size={14} className="text-indigo-600" />
-                  <h4 className="font-semibold text-xs sm:text-sm text-indigo-700">
-                    <Tooltip text="Extra earnings added to your fare based on ride characteristics and market conditions">
+                <div className="flex justify-between items-center mb-2">
+                  <h4 className="font-semibold text-xs sm:text-sm text-indigo-700 flex items-center">
+                    <Zap size={14} className="text-indigo-600 mr-1" />
+                    <Tooltip text="Extra earnings added to your fare based on demand">
                       <div className="flex items-center">
-                        Incentives: ₹{notification.incentives.total}
+                        Surge Pricing: ₹{notification.incentives.total}
                         <Info size={10} className="ml-1 text-indigo-400" />
                       </div>
                     </Tooltip>
                   </h4>
+                  
+                  <div className="flex items-center gap-1 text-xs bg-indigo-100 px-2 py-1 rounded-full">
+                    <Award size={12} className="text-indigo-600" />
+                    <span>+{notification.incentives.points_earned} pts</span>
+                  </div>
                 </div>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                  {notification.incentives.breakdown.longDistance && (
-                    <div className="flex justify-between">
-                      <Tooltip text="Bonus for long-distance rides (over 10km) - pays ₹3 per km for distances above 10km, up to 30km extra">
-                        <span className="text-gray-600 flex items-center">
-                          Long Distance <Info size={10} className="ml-1 text-gray-400" />
-                        </span>
-                      </Tooltip>
-                      <span className="font-medium">₹{notification.incentives.breakdown.longDistance}</span>
-                    </div>
-                  )}
-                  {notification.incentives.breakdown.deadMileage && (
-                    <div className="flex justify-between">
-                      <Tooltip text="Compensation for distance traveled to reach the pickup point. Calculated as a percentage of the standard distance rate based on your vehicle type.">
-                        <span className="text-gray-600 flex items-center">
-                          Pickup Distance <Info size={10} className="ml-1 text-gray-400" />
-                        </span>
-                      </Tooltip>
-                      <span className="font-medium">₹{notification.incentives.breakdown.deadMileage}</span>
-                    </div>
-                  )}
-                  {notification.incentives.breakdown.highDemand && (
-                    <div className="flex justify-between">
-                      <Tooltip text="Extra incentive during high demand periods - pays ₹2 per km when demand exceeds 70% in the area">
-                        <span className="text-gray-600 flex items-center">
-                          High Demand <Info size={10} className="ml-1 text-gray-400" />
-                        </span>
-                      </Tooltip>
-                      <span className="font-medium">₹{notification.incentives.breakdown.highDemand}</span>
-                    </div>
-                  )}
+                  <div className="flex justify-between">
+                    <Tooltip text="Amount added directly to your fare (75% of surge)">
+                      <span className="text-gray-600 flex items-center">
+                        Added to fare <Info size={10} className="ml-1 text-gray-400" />
+                      </span>
+                    </Tooltip>
+                    <span className="font-medium">₹{notification.incentives.fare_component}</span>
+                  </div>
+                  
+                  <div className="flex justify-between">
+                    <Tooltip text="Each 10 rupees of surge gives you 1 reward point (rounded if >0.5)">
+                      <span className="text-gray-600 flex items-center">
+                        Points earned <Info size={10} className="ml-1 text-gray-400" />
+                      </span>
+                    </Tooltip>
+                    <span className="font-medium">{notification.incentives.points_earned} pts</span>
+                  </div>
                 </div>
               </div>
               

@@ -12,6 +12,7 @@ const MapTabPanel: React.FC<MapTabPanelProps> = ({ center }) => {
   // Set the initial map center to Vijarahalli coordinates
   const vijarahalliCenter: [number, number] = [VIJARAHALLI_LOCATION.longitude, VIJARAHALLI_LOCATION.latitude];
   
+  // Always use Vajrahalli as the current location regardless of map movement
   const [currentLocation, setCurrentLocation] = useState({ 
     lat: VIJARAHALLI_LOCATION.latitude, 
     lng: VIJARAHALLI_LOCATION.longitude 
@@ -20,9 +21,10 @@ const MapTabPanel: React.FC<MapTabPanelProps> = ({ center }) => {
   const [loading, setLoading] = useState(false);
   const [showPredictions, setShowPredictions] = useState(false);
 
-  // Handle location updates from the Map component
+  // Handle location updates from the Map component - but keep Vajrahalli as the fixed base
   const handleLocationUpdate = (location: { lat: number; lng: number }) => {
-    setCurrentLocation(location);
+    // We no longer update the current location as Vajrahalli is fixed as base
+    console.log('Map moved, but keeping Vajrahalli as fixed base for calculations');
   };
 
   // Load predictions for the next hour based on current location
@@ -30,8 +32,9 @@ const MapTabPanel: React.FC<MapTabPanelProps> = ({ center }) => {
     setLoading(true);
     
     try {
-      console.log('Loading predictions for Vijarahalli:', VIJARAHALLI_LOCATION);
+      console.log('Loading predictions for Vajrahalli:', VIJARAHALLI_LOCATION);
       
+      // Always use Vajrahalli as the base location for predictions
       const predictions = await getNearestPlacesWithDemand(VIJARAHALLI_LOCATION);
       
       console.log('Received predictions:', predictions);

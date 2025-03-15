@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { calculateDynamicFare } from './fareCalculation';
+import { calculateDirectDistance } from './mapboxService';
 
 // Enhanced driver interface with more details for matching
 interface Driver {
@@ -46,14 +47,18 @@ interface Notification {
   pickup: string;
   destination: string;
   ride_type: string; // Classification type
+  display_name: string; // User-friendly ride type name
   estimated_fare: number;
   estimated_profit: number; // Added for driver clarity
+  compatibility_score: number; // Score indicating driver-ride match quality
+  compatibility_reason: string; // Simple explanation of why this ride matches the driver
   incentives: {
     total: number;
+    fare_component: number; // 75% of incentive included in fare
+    points_component: number; // 25% of incentive as points
+    points_earned: number; // Points earned from this ride
     breakdown: {
-      longDistance?: number;
-      deadMileage?: number;
-      highDemand?: number;
+      surgePrice: number; // Only surge pricing is used now
     }
   };
   message: string;
@@ -63,14 +68,49 @@ interface Notification {
   status: 'pending' | 'accepted' | 'rejected' | 'started' | 'completed';
 }
 
-// Enhanced ride types (more descriptive than simple "Premium", "Express", etc.)
+// Enhanced ride types based on 9x9 Demand-Supply Matrix
 export enum RideType {
-  HighDemand = "HighDemand", // High demand, low supply - highest fares
-  LongDistance = "LongDistance", // Trips over certain distance thresholds
-  NightRide = "NightRide", // Rides during late hours
-  EconomySaver = "EconomySaver", // Low demand periods
-  DriverMatch = "DriverMatch" // Rides matched to driver expertise/ratings
+  // High Demand scenarios
+  HD_HS = "HD_HS", // High Demand, High Supply
+  HD_MS = "HD_MS", // High Demand, Medium Supply
+  HD_LS = "HD_LS", // High Demand, Low Supply
+  
+  // Medium Demand scenarios
+  MD_HS = "MD_HS", // Medium Demand, High Supply
+  MD_MS = "MD_MS", // Medium Demand, Medium Supply
+  MD_LS = "MD_LS", // Medium Demand, Low Supply
+  
+  // Low Demand scenarios
+  LD_HS = "LD_HS", // Low Demand, High Supply
+  LD_MS = "LD_MS", // Low Demand, Medium Supply
+  LD_LS = "LD_LS"  // Low Demand, Low Supply
 }
+
+// Map ride types to user-friendly display names - simplified
+export const RideTypeDisplayNames: Record<RideType, string> = {
+  [RideType.HD_HS]: "High Demand",
+  [RideType.HD_MS]: "High Demand",
+  [RideType.HD_LS]: "High Demand",
+  [RideType.MD_HS]: "Regular Ride",
+  [RideType.MD_MS]: "Regular Ride",
+  [RideType.MD_LS]: "Regular Ride",
+  [RideType.LD_HS]: "Regular Ride",
+  [RideType.LD_MS]: "Regular Ride",
+  [RideType.LD_LS]: "Regular Ride"
+};
+
+// Classification reasons for each ride type
+export const RideTypeReasons: Record<RideType, string> = {
+  [RideType.HD_HS]: "High demand area with many available drivers",
+  [RideType.HD_MS]: "High demand area with limited drivers available",
+  [RideType.HD_LS]: "Very high demand with few drivers - surge pricing applied",
+  [RideType.MD_HS]: "Moderate demand with plenty of available drivers",
+  [RideType.MD_MS]: "Balanced demand and supply conditions",
+  [RideType.MD_LS]: "Moderate demand with limited driver availability",
+  [RideType.LD_HS]: "Low demand area with many available drivers",
+  [RideType.LD_MS]: "Low demand area with moderate driver availability",
+  [RideType.LD_LS]: "Low demand and limited drivers - matching based on proximity"
+};
 
 // Mock data with improved location data for Mapbox integration
 const mockDrivers: Record<string, Driver> = {
@@ -181,56 +221,144 @@ const mockRides: Record<string, Ride> = {
   }
 };
 
-// Improved ride classification system with more meaningful classifications
-const classifyRideType = (ride: Ride, driver: Driver): {type: RideType, reason: string} => {
-  // High demand, low supply scenario - highest priority
-  if (ride.demand === "high" && ride.supply === "low") {
-    return {
-      type: RideType.HighDemand,
-      reason: "High demand and low driver supply in this area"
-    };
+// Define driver persona types that can match with ride types
+export enum DriverPersonaType {
+  LongHaulSpecialist = "Long Haul Specialist",
+  UrbanNavigator = "Urban Navigator",
+  LuxuryExpert = "Luxury Expert",
+  NightRider = "Night Rider",
+  NewbieDriver = "Newbie Driver"
+}
+
+// Map each ride type to compatible driver personas
+export const RideTypePersonaMatch: Record<RideType, DriverPersonaType[]> = {
+  [RideType.HD_HS]: [DriverPersonaType.LuxuryExpert, DriverPersonaType.UrbanNavigator],
+  [RideType.HD_MS]: [DriverPersonaType.LuxuryExpert, DriverPersonaType.UrbanNavigator],
+  [RideType.HD_LS]: [DriverPersonaType.LuxuryExpert],
+  [RideType.MD_HS]: [DriverPersonaType.UrbanNavigator, DriverPersonaType.LongHaulSpecialist],
+  [RideType.MD_MS]: [DriverPersonaType.UrbanNavigator, DriverPersonaType.LongHaulSpecialist, DriverPersonaType.NewbieDriver],
+  [RideType.MD_LS]: [DriverPersonaType.UrbanNavigator, DriverPersonaType.LongHaulSpecialist],
+  [RideType.LD_HS]: [DriverPersonaType.NewbieDriver, DriverPersonaType.NightRider],
+  [RideType.LD_MS]: [DriverPersonaType.NewbieDriver, DriverPersonaType.NightRider],
+  [RideType.LD_LS]: [DriverPersonaType.LongHaulSpecialist, DriverPersonaType.NightRider]
+};
+
+// Improved ride classification system based on the 9x9 Demand-Supply Matrix
+const classifyRideType = (ride: Ride, driver: Driver): {type: RideType, reason: string, compatibilityScore: number} => {
+  // Map demand and supply to the matrix
+  let rideType: RideType;
+  
+  // Determine the ride type based on demand and supply levels
+  if (ride.demand === "high") {
+    if (ride.supply === "high") {
+      rideType = RideType.HD_HS;
+    } else if (ride.supply === "medium") {
+      rideType = RideType.HD_MS;
+    } else {
+      rideType = RideType.HD_LS;
+    }
+  } else if (ride.demand === "medium") {
+    if (ride.supply === "high") {
+      rideType = RideType.MD_HS;
+    } else if (ride.supply === "medium") {
+      rideType = RideType.MD_MS;
+    } else {
+      rideType = RideType.MD_LS;
+    }
+  } else {
+    if (ride.supply === "high") {
+      rideType = RideType.LD_HS;
+    } else if (ride.supply === "medium") {
+      rideType = RideType.LD_MS;
+    } else {
+      rideType = RideType.LD_LS;
+    }
   }
   
-  // Long distance rides (over 20km)
-  if (ride.distance > 20) {
-    return {
-      type: RideType.LongDistance,
-      reason: `Long distance ride (${ride.distance}km)`
-    };
+  // Special handling for MD_MS and LD_LS based on proximity
+  if (rideType === RideType.MD_MS || rideType === RideType.LD_LS) {
+    // In a real implementation, we would calculate actual proximity
+    // For now, we'll use a simple direct distance calculation
+    const driverToPickupDistance = calculateDirectDistance(
+      driver.coordinates,
+      ride.coordinates.pickup
+    );
+    
+    // If driver is close (within 3km), prioritize this match
+    if (driverToPickupDistance < 3) {
+      // Enhance the reason
+      const reason = RideTypeReasons[rideType] + " - You're very close to pickup point!";
+      const { score } = calculateCompatibilityScore(driver, rideType, driverToPickupDistance);
+      return {
+        type: rideType, 
+        reason, 
+        compatibilityScore: score
+      };
+    }
   }
   
-  // Night rides (safety, higher rates)
-  if (ride.timeOfDay === "night") {
-    return {
-      type: RideType.NightRide,
-      reason: "Night ride - higher fare and safety protocols"
-    };
-  }
-  
-  // Driver expertise match
-  if (
-    driver.rating > 4.7 || 
-    driver.experience > 3 ||
-    (driver.preferredAreas && driver.preferredAreas.includes(ride.pickup))
-  ) {
-    return {
-      type: RideType.DriverMatch,
-      reason: `Matched to your high rating (${driver.rating}/5) and experience (${driver.experience} years)`
-    };
-  }
-  
-  // Economy saver - low demand periods
-  if (ride.demand === "low") {
-    return {
-      type: RideType.EconomySaver,
-      reason: "Lower demand period - economical fare for customers"
-    };
-  }
-  
-  // Default fallback
+  const { score } = calculateCompatibilityScore(driver, rideType);
   return {
-    type: RideType.EconomySaver,
-    reason: "Standard ride"
+    type: rideType, 
+    reason: RideTypeReasons[rideType],
+    compatibilityScore: score
+  };
+};
+
+// Update the calculateCompatibilityScore function to provide simple explanations
+const calculateCompatibilityScore = (
+  driver: Driver, 
+  rideType: RideType, 
+  proximityDistance: number = 5 // Default medium distance
+): {score: number, reason: string} => {
+  let score = 0;
+  let reasonParts: string[] = [];
+  
+  // Base score from driver rating (0-20 points)
+  score += Math.min(driver.rating * 4, 20);
+  
+  // Persona match (0-40 points)
+  const driverPersona = driver.preferredAreas ? DriverPersonaType.LongHaulSpecialist : DriverPersonaType.NewbieDriver;
+  const personaMatch = RideTypePersonaMatch[rideType].includes(driverPersona);
+  if (personaMatch) {
+    score += 40;
+    reasonParts.push("This ride is perfect for your driving style");
+  } else {
+    score += 15; // Partial match
+  }
+  
+  // Experience points (0-20 points)
+  score += Math.min(driver.experience * 4, 20);
+  if (driver.experience > 2) {
+    reasonParts.push("Your experience makes you a good match");
+  }
+  
+  // Proximity points (0-20 points)
+  // Closer = higher score
+  const proximityScore = Math.max(0, 20 - (proximityDistance * 4));
+  score += proximityScore;
+  
+  if (proximityDistance < 3) {
+    reasonParts.push("You are very close to pickup point");
+  } else if (proximityDistance < 6) {
+    reasonParts.push("Pickup point is not too far");
+  }
+  
+  // Add ride type specific reasons
+  if (rideType.startsWith('HD_')) {
+    reasonParts.push("High demand means better earnings");
+  } else if (rideType === RideType.LD_LS) {
+    reasonParts.push("Not many drivers in this area");
+  }
+  
+  // Create a simple explanation
+  const reason = reasonParts.length > 0 
+    ? reasonParts.join(". ") + "." 
+    : "This ride matches your profile.";
+  
+  return {
+    score: Math.min(Math.round(score), 100),
+    reason
   };
 };
 
@@ -249,12 +377,18 @@ const processRideRequest = async (rideId: string, driverId: string): Promise<Not
     throw new Error("Ride or driver not found");
   }
   
-  // Classify the ride
+  // Classify the ride using the new 9x9 matrix model
   const classification = classifyRideType(ride, driver);
-  console.log(`Ride classified as: ${classification.type}`);
+  console.log(`Ride classified as: ${classification.type} with compatibility score: ${classification.compatibilityScore}`);
+
+  // Define Vajrahalli location (hardcoded current location for driver as mentioned)
+  const vajrahalliLocation = {
+    latitude: 12.9281,
+    longitude: 77.4892
+  };
   
-  // Calculate fare based on ride details
-  const driverLocation = driver.coordinates;
+  // Calculate fare based on ride details and actual locations using Mapbox
+  const driverLocation = vajrahalliLocation; // Using the hardcoded location
   const pickupLocation = ride.coordinates.pickup;
   const dropoffLocation = ride.coordinates.dropoff;
   
@@ -274,11 +408,17 @@ const processRideRequest = async (rideId: string, driverId: string): Promise<Not
       estimatedWaitTime: 5 // Assume 5 minutes wait time
     },
     demandLevel,
-    supplyLevel
+    supplyLevel,
+    classification.type as string
   );
   
   console.log(`Fare calculation completed: ₹${fareDetails.totalFare}`);
   console.log(`Breakdown:`, fareDetails.breakdown);
+  
+  // Get the compatibility explanation
+  const { score: compatibilityScore, reason: compatibilityReason } = 
+    calculateCompatibilityScore(driver, classification.type as RideType, 
+    calculateDirectDistance(vajrahalliLocation, pickupLocation));
   
   // Get the timestamp now
   const timestamp = new Date();
@@ -286,24 +426,28 @@ const processRideRequest = async (rideId: string, driverId: string): Promise<Not
   // Set expiry to 30 seconds from now
   const expiry = new Date(timestamp.getTime() + 30000);
   
-  // Create the notification
+  // Create the notification with compatibility score and new incentive structure
   const notification: Notification = {
     ride_id: rideId,
     driver_id: driverId,
     pickup: ride.pickup,
     destination: ride.dest,
     ride_type: classification.type as string,
+    display_name: RideTypeDisplayNames[classification.type as RideType],
     estimated_fare: fareDetails.totalFare,
     estimated_profit: fareDetails.breakdown.estimatedProfit,
+    compatibility_score: compatibilityScore,
+    compatibility_reason: compatibilityReason,
     incentives: {
       total: fareDetails.breakdown.incentive,
+      fare_component: fareDetails.breakdown.fareIncentiveComponent,
+      points_component: fareDetails.breakdown.pointsIncentiveComponent,
+      points_earned: fareDetails.breakdown.pointsEarned,
       breakdown: {
-        longDistance: fareDetails.breakdown.incentiveBreakdown.longDistance,
-        deadMileage: fareDetails.breakdown.incentiveBreakdown.deadMileage,
-        highDemand: fareDetails.breakdown.incentiveBreakdown.highDemand
+        surgePrice: fareDetails.breakdown.incentiveBreakdown.surgePrice
       }
     },
-    message: `New ${classification.type} ride request from ${ride.pickup} to ${ride.dest}`,
+    message: `New ride request from ${ride.pickup} to ${ride.dest}`,
     timestamp,
     expiry,
     classification_reason: classification.reason,
@@ -339,7 +483,7 @@ const Classification: React.FC = () => {
         <div className="space-y-4">
           {notifications.map(notification => (
             <div key={notification.ride_id} className="border p-4 rounded shadow-sm">
-              <h3 className="font-semibold">{notification.ride_type}</h3>
+              <h3 className="font-semibold">{notification.display_name}</h3>
               <p className="text-sm text-gray-600">{notification.classification_reason}</p>
               <div className="mt-2">
                 <div><span className="font-medium">Pickup:</span> {notification.pickup}</div>

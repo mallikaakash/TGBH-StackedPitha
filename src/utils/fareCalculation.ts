@@ -16,10 +16,11 @@ interface FareBreakdown {
   demandMultiplier: number;
   fuelCost: number;
   estimatedProfit: number;
+  fareIncentiveComponent: number;
+  pointsIncentiveComponent: number;
+  pointsEarned: number; // Number of points earned (1 point per 10 Rs)
   incentiveBreakdown: {
-    longDistance: number;
-    deadMileage: number;
-    highDemand: number;
+    surgePrice: number;
   };
 }
 
@@ -78,52 +79,71 @@ export const getMapboxDistance = async (origin: Coordinates, destination: Coordi
 };
 
 /**
- * Calculate driver incentive based on various factors
+ * Calculate driver incentive based on the 9x9 matrix model
+ * Simplified to only include surge pricing when demand/supply is unbalanced
  */
 const calculateDriverIncentive = (
-  rideDetails: RideDetails,
   distance: number,
-  deadMileage: number,
-  demandLevel: number
-): { total: number, breakdown: { longDistance: number, deadMileage: number, highDemand: number } } => {
-  const { vehicleType } = rideDetails;
+  demandLevel: number,
+  supplyLevel: number,
+  rideType: string
+): { total: number, breakdown: { surgePrice: number } } => {
+  // Determine surge pricing based on matrix position
+  // Maximum surge of 30 rupees
+  let surgePrice = 0;
   
-  let longDistanceIncentive = 0;
-  let deadMileageIncentive = 0;
-  let highDemandIncentive = 0;
+  // Only apply surge pricing when demand and supply are unbalanced
+  // Balanced scenarios: HD_HS, MD_MS, LD_LS have no surge
   
-  if (distance > 10) {
-    longDistanceIncentive = Math.min(distance - 10, 30) * 3;
+  // High demand, unbalanced supply scenarios
+  if (rideType === 'HD_LS') {
+    surgePrice = 30; // High demand, low supply - maximum surge
+  } else if (rideType === 'HD_MS') {
+    surgePrice = 25; // High demand, medium supply
   }
-  
-  const deadMileageCompensation = deadMileage * DEAD_MILEAGE_COMPENSATION[vehicleType];
-  deadMileageIncentive = Math.round(deadMileageCompensation * RATES.DISTANCE_RATE[vehicleType] * 0.5);
-  
-  if (demandLevel > 0.7) {
-    highDemandIncentive = Math.round(distance * 2);
+  // Medium demand, unbalanced supply scenarios
+  else if (rideType === 'MD_LS') {
+    surgePrice = 20; // Medium demand, low supply
+  } else if (rideType === 'MD_HS') {
+    surgePrice = 10; // Medium demand, high supply
   }
-  
-  const totalIncentive = Math.round(longDistanceIncentive + deadMileageIncentive + highDemandIncentive);
+  // Low demand, unbalanced supply scenarios
+  else if (rideType === 'LD_MS') {
+    surgePrice = 5; // Low demand, medium supply
+  } else if (rideType === 'LD_HS') {
+    surgePrice = 0; // Low demand, high supply - no surge
+  }
+  // Balanced scenarios - no surge
+  else if (rideType === 'HD_HS' || rideType === 'MD_MS' || rideType === 'LD_LS') {
+    surgePrice = 0;
+  }
   
   return {
-    total: totalIncentive,
+    total: surgePrice,
     breakdown: {
-      longDistance: longDistanceIncentive,
-      deadMileage: deadMileageIncentive,
-      highDemand: highDemandIncentive
+      surgePrice
     }
   };
 };
 
 /**
- * Determine demand-supply multiplier based on current market conditions
+ * Determine demand-supply multiplier based on the 9x9 matrix
  */
-const getDemandSupplyMultiplier = (demandLevel: number, supplyLevel: number): number => {
-  if (demandLevel > 0.7 && supplyLevel < 0.3) return 1.5;
-  if (demandLevel > 0.7 && supplyLevel >= 0.3) return 1.2;
-  if (demandLevel > 0.5 && supplyLevel < 0.5) return 1.1;
-  if (demandLevel < 0.3 && supplyLevel < 0.3) return 0.9;
-  if (demandLevel < 0.3 && supplyLevel > 0.7) return 0.8;
+const getDemandSupplyMultiplier = (rideType: string): number => {
+  // Enhanced multipliers based on matrix position
+  if (rideType === 'HD_LS') return 1.4; // Highest surge
+  if (rideType === 'HD_MS') return 1.3;
+  if (rideType === 'HD_HS') return 1.2;
+  
+  if (rideType === 'MD_LS') return 1.2;
+  if (rideType === 'MD_MS') return 1.1;
+  if (rideType === 'MD_HS') return 1.05;
+  
+  if (rideType === 'LD_LS') return 1.05;
+  if (rideType === 'LD_MS') return 1.0;
+  if (rideType === 'LD_HS') return 1.0; // No surge for low demand, high supply
+  
+  // Default multiplier
   return 1.0;
 };
 
@@ -142,43 +162,64 @@ const calculateFuelCost = (distance: number, vehicleType: 'auto' | 'car' | 'prem
 export const calculateDynamicFare = async (
   rideDetails: RideDetails,
   demandLevel: number = 0.5,
-  supplyLevel: number = 0.5
+  supplyLevel: number = 0.5,
+  rideType: string = 'MD_MS' // Default to medium demand, medium supply
 ): Promise<FareResult> => {
   const { vehicleType, estimatedWaitTime } = rideDetails;
   
+  // Get actual route distance from MapBox API
   const routeDistance = await getMapboxDistance(
     rideDetails.pickupLocation,
     rideDetails.dropoffLocation
   );
   
+  // Calculate dead mileage (just for reference, not used in pricing)
   const deadMileage = await calculateDeadMileage(
     rideDetails.driverLocation,
     rideDetails.pickupLocation
   );
   
-  const demandMultiplier = getDemandSupplyMultiplier(demandLevel, supplyLevel);
+  // Get demand multiplier based on the 9x9 matrix
+  const demandMultiplier = getDemandSupplyMultiplier(rideType);
   
+  // Calculate incentives (surge pricing only) with simplified logic
   const incentiveResult = calculateDriverIncentive(
-    rideDetails,
     routeDistance,
-    deadMileage,
-    demandLevel
+    demandLevel,
+    supplyLevel,
+    rideType
   );
   
-  const fuelCost = calculateFuelCost(routeDistance + deadMileage * 0.5, vehicleType);
+  // Calculate realistic fuel cost based on distance and vehicle type
+  const fuelCost = calculateFuelCost(routeDistance + deadMileage, vehicleType);
   
+  // Base fare components
   const baseFare = RATES.BASE_FARE[vehicleType];
-  const distanceFare = Math.round(routeDistance * RATES.DISTANCE_RATE[vehicleType]);
-  const waitTimeFare = Math.round(estimatedWaitTime * RATES.TIME_RATE[vehicleType]);
+  const distanceFare = Math.floor(routeDistance * RATES.DISTANCE_RATE[vehicleType]);
+  const waitTimeFare = Math.floor(estimatedWaitTime * RATES.TIME_RATE[vehicleType]);
   
-  const totalBeforeIncentive = Math.round(
+  // Calculate fare before surge with demand multiplier
+  const totalBeforeIncentive = Math.floor(
     (baseFare + distanceFare + waitTimeFare) * demandMultiplier
   );
   
-  const totalFare = totalBeforeIncentive + incentiveResult.total;
+  // Split incentive: 75% goes into fare, 25% becomes points
+  const fareIncentiveComponent = Math.floor(incentiveResult.total * 0.75);
+  const pointsIncentiveComponent = Math.floor(incentiveResult.total * 0.25);
   
-  const platformFee = Math.round(totalFare * 0.20);
-  const estimatedProfit = Math.round(totalFare - fuelCost - platformFee);
+  // Points earned (10 Rs = 1 point)
+  // Round up if > 0.5 points
+  const pointsValue = pointsIncentiveComponent / 10;
+  const pointsEarned = pointsValue >= 0.5 ? Math.ceil(pointsValue) : Math.floor(pointsValue);
+  
+  // Total fare includes the 75% of surge
+  const totalFare = Math.floor(totalBeforeIncentive + fareIncentiveComponent);
+  
+  // Platform fee (20% of total fare)
+  const platformFee = Math.floor(totalFare * 0.20);
+  
+  // Calculate realistic profit: fare - platform fee - fuel cost
+  const estimatedProfit = Math.floor(totalFare - platformFee - fuelCost);
   
   return {
     totalFare,
@@ -187,7 +228,12 @@ export const calculateDynamicFare = async (
       distanceFare,
       waitTimeFare,
       incentive: incentiveResult.total,
-      incentiveBreakdown: incentiveResult.breakdown,
+      incentiveBreakdown: {
+        surgePrice: incentiveResult.breakdown.surgePrice
+      },
+      fareIncentiveComponent,
+      pointsIncentiveComponent,
+      pointsEarned,
       demandMultiplier,
       fuelCost,
       estimatedProfit

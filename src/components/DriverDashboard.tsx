@@ -16,6 +16,7 @@ interface DriverDashboardProps {
 const DriverDashboard: React.FC<DriverDashboardProps> = ({ center }) => {
   const [activeTab, setActiveTab] = useState<string>('overview');
   const [timeFilter, setTimeFilter] = useState<string>('week');
+  const [totalPoints, setTotalPoints] = useState<number>(5); // Initialize with 5 points
   
   // Mock data - would be fetched from API in a real implementation
   const driverData = {
@@ -597,7 +598,42 @@ const DriverDashboard: React.FC<DriverDashboardProps> = ({ center }) => {
         </div>
       </div>
 
-      
+      {activeTab === 'overview' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          {/* Points Card - Display driver's accumulated points */}
+          <div className="bg-gradient-to-br from-indigo-500 to-indigo-700 text-white p-5 rounded-xl shadow-md">
+            <div className="flex items-center mb-4">
+              <Award className="mr-3" size={24} />
+              <h3 className="font-semibold text-lg">Reward Points</h3>
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-3xl font-bold">{totalPoints || 5}</p>
+                <p className="text-xs mt-1 text-indigo-100">Free subscription at 10 points</p>
+              </div>
+              <div className="bg-white/20 p-2 rounded-full">
+                <Trophy size={28} className="text-indigo-100" />
+              </div>
+            </div>
+            
+            {/* Progress bar for next reward */}
+            <div className="mt-4">
+              <div className="flex justify-between text-xs mb-1">
+                <span>Progress</span>
+                <span>{(totalPoints || 5)}/10 points</span>
+              </div>
+              <div className="w-full bg-indigo-800/40 rounded-full h-2">
+                <div 
+                  className="bg-white h-2 rounded-full" 
+                  style={{ width: `${Math.min(((totalPoints || 5) / 10) * 100, 100)}%` }}
+                ></div>
+              </div>
+            </div>
+          </div>
+          
+          {/* Keep other cards here */}
+        </div>
+      )}
     </div>
   );
 };
