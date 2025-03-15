@@ -6,6 +6,7 @@ import { Tab } from '@headlessui/react';
 import MapTabPanel from '@/components/MapTabPanel';
 import NotificationsTabPanel from '@/components/NotificationsTabPanel';
 import ProfileTabPanel from '@/components/ProfileTabPanel';
+import { VIJARAHALLI_LOCATION } from '@/services/modelService';
 
 const DriverDashboard = () => {
   const [activeTab, setActiveTab] = useState(0);
@@ -30,63 +31,31 @@ const DriverDashboard = () => {
     },
   ]);
 
-  const rideRequests = [
-    {
-      id: 1,
-      pickup: 'MG Road',
-      dropoff: 'Indiranagar',
-      distance: '4.5 km',
-      estimatedFare: '₹250',
-      time: '5 min away',
-    },
-    {
-      id: 2,
-      pickup: 'Koramangala',
-      dropoff: 'Whitefield',
-      distance: '12.8 km',
-      estimatedFare: '₹350',
-      time: '8 min away',
-    },
-    {
-      id: 3,
-      pickup: 'Electronic City',
-      dropoff: 'HSR Layout',
-      distance: '9.2 km',
-      estimatedFare: '₹320',
-      time: '3 min away',
-    },
-  ];
-
-  const center: [number, number] = [77.5946, 12.9716]; // Bangalore coordinates
+  // Vijarahalli coordinates - [longitude, latitude]
+  const center: [number, number] = [VIJARAHALLI_LOCATION.longitude, VIJARAHALLI_LOCATION.latitude];
 
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* Top Navigation Bar */}
-      <nav className="bg-gradient-to-r from-blue-600 to-violet-500 shadow-lg">
+      <header className="bg-white shadow-sm border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center space-x-3">
-              <div className="bg-white rounded-full p-2">
-                <Map size={24} className="text-blue-600" />
-              </div>
-              <span className="text-white font-bold text-xl">RideSync</span>
+          <div className="flex justify-between h-16 items-center">
+            <div className="flex items-center">
+              <div className="text-xl font-bold text-blue-600">NammaYatri</div>
             </div>
             <div className="flex items-center space-x-4">
-              <div className="relative">
-                <button className="bg-white/10 rounded-full p-2 hover:bg-white/20 transition-all duration-200">
-                  <Bell size={18} className="text-white" />
-                </button>
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-4 w-4 flex items-center justify-center">
-                  {notifications.length}
-                </span>
-              </div>
-              <div className="bg-white/10 rounded-full p-2 hover:bg-white/20 transition-all duration-200">
-                <User size={18} className="text-white" />
+              <button className="p-1 rounded-full text-slate-500 hover:text-slate-600 hover:bg-slate-100">
+                <Bell size={20} />
+              </button>
+              <div className="flex items-center space-x-2">
+                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-medium">
+                  D
+                </div>
+                <span className="font-medium text-slate-700">Driver</span>
               </div>
             </div>
           </div>
         </div>
-      </nav>
+      </header>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="bg-white rounded-xl shadow-xl overflow-hidden border border-slate-100">
@@ -110,7 +79,7 @@ const DriverDashboard = () => {
             </Tab.List>
             <Tab.Panels>
               <Tab.Panel>
-                <MapTabPanel rideRequests={rideRequests} center={center} />
+                <MapTabPanel center={center} />
               </Tab.Panel>
               <Tab.Panel>
                 <NotificationsTabPanel />

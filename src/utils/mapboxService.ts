@@ -129,6 +129,52 @@ export const calculateDrivingTime = async (
 };
 
 /**
+ * Helper function to decode Mapbox's polyline format
+ * 
+ * @param str - Encoded polyline string
+ * @returns Decoded array of coordinates [longitude, latitude]
+ */
+export const decodePolyline = (str: string): [number, number][] => {
+  const coordinates: [number, number][] = [];
+  let index = 0;
+  let lat = 0;
+  let lng = 0;
+  
+  while (index < str.length) {
+    // Decode latitude
+    let result = 0;
+    let shift = 0;
+    let b = 0;
+    
+    do {
+      b = str.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    
+    const dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
+    lat += dlat;
+    
+    // Decode longitude
+    result = 0;
+    shift = 0;
+    
+    do {
+      b = str.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    
+    const dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
+    lng += dlng;
+    
+    coordinates.push([lng * 1e-5, lat * 1e-5]);
+  }
+  
+  return coordinates;
+};
+
+/**
  * Get complete route details between two points
  * 
  * @param origin - Starting coordinates
@@ -148,8 +194,10 @@ export const getRouteDetails = async (
     // Format coordinates for the Mapbox API
     const coordinates = `${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}`;
     
-    // Request additional annotations for traffic data
-    const url = `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${coordinates}?access_token=${MAPBOX_TOKEN}&geometries=polyline&overview=full&annotations=congestion,duration,distance`;
+    // Request additional parameters for complete route information
+    const url = `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${coordinates}?access_token=${MAPBOX_TOKEN}&geometries=geojson&overview=full&annotations=congestion,duration,distance&steps=true`;
+    
+    console.log('Fetching route from Mapbox API:', url);
     
     const response = await fetch(url);
     
@@ -181,10 +229,20 @@ export const getRouteDetails = async (
       }
     }
     
+    // Extract route geometry
+    const geometry = JSON.stringify(data.routes[0].geometry);
+    
+    console.log('Route details retrieved successfully:', {
+      distance: data.routes[0].distance / 1000,
+      duration: data.routes[0].duration / 60,
+      geometryType: typeof data.routes[0].geometry,
+      hasCoordinates: data.routes[0].geometry.coordinates?.length > 0
+    });
+    
     return {
       distance: data.routes[0].distance / 1000, // Convert meters to kilometers
       duration: data.routes[0].duration / 60,   // Convert seconds to minutes
-      geometry: data.routes[0].geometry,
+      geometry: geometry,
       trafficDensity
     };
   } catch (error) {
@@ -192,10 +250,20 @@ export const getRouteDetails = async (
     
     // Fallback to direct calculation
     const directDistance = calculateDirectDistance(origin, destination);
+    
+    // Create a simple straight-line route for fallback
+    const fallbackGeometry = {
+      type: "LineString",
+      coordinates: [
+        [origin.longitude, origin.latitude],
+        [destination.longitude, destination.latitude]
+      ]
+    };
+    
     return {
       distance: directDistance * 1.3, // Approximate real-world distance
       duration: (directDistance * 1.3) / 0.5, // Assuming average speed of 30km/h (0.5km/min)
-      geometry: "",
+      geometry: JSON.stringify(fallbackGeometry),
       trafficDensity: "unknown"
     };
   }
@@ -248,25 +316,27 @@ export const getTrafficConditions = async (
   try {
     const routeDetails = await getRouteDetails(origin, destination);
     
-    // Map the traffic density to a delay factor
-    const delayFactors: Record<string, number> = {
-      "high": 1.5,
-      "medium-high": 1.3,
-      "medium": 1.15,
-      "low": 1.0,
-      "unknown": 1.2
+    // Map trafficDensity to congestionLevel and delayFactor
+    const congestionMap: Record<string, { level: string; factor: number }> = {
+      "high": { level: "Severe Congestion", factor: 1.8 },
+      "medium-high": { level: "Heavy Traffic", factor: 1.5 },
+      "medium": { level: "Moderate Traffic", factor: 1.2 },
+      "low": { level: "Light Traffic", factor: 1.0 },
+      "unknown": { level: "Traffic Info Unavailable", factor: 1.3 }
     };
     
+    const congestion = congestionMap[routeDetails.trafficDensity] || congestionMap["unknown"];
+    
     return {
-      congestionLevel: routeDetails.trafficDensity,
-      delayFactor: delayFactors[routeDetails.trafficDensity] || 1.2,
-      incidents: [] // In a real implementation, this would include actual traffic incidents
+      congestionLevel: congestion.level,
+      delayFactor: congestion.factor,
+      incidents: [] // In a real implementation, this would include traffic incidents along the route
     };
   } catch (error) {
     console.error('Error getting traffic conditions:', error);
     return {
-      congestionLevel: "unknown",
-      delayFactor: 1.2,
+      congestionLevel: "Unknown",
+      delayFactor: 1.3,
       incidents: []
     };
   }

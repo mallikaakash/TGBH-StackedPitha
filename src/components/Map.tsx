@@ -4,7 +4,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import type { FeatureCollection, Point, Feature, Geometry } from 'geojson';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { predictHotspots } from '../services/hotspotService';
+import { getRouteDetails, Coordinates } from '../utils/mapboxService';
+import { PlacePrediction, VIJARAHALLI_LOCATION } from '../services/modelService';
+import { calculateEstimatedFare, calculateDriverProfit, getSurgeMultiplierFromDemand } from '../utils/fareCalculation';
 
 // Replace with your Mapbox access token
 mapboxgl.accessToken = 'pk.eyJ1IjoiYWFrYXNobWFsbGlrIiwiYSI6ImNtODc5cHZ0aDBlZjMyaXNlcGc3aXk5ZGMifQ.xYguCB_TJiuP55uWMAvUNA';
@@ -12,13 +14,9 @@ mapboxgl.accessToken = 'pk.eyJ1IjoiYWFrYXNobWFsbGlrIiwiYSI6ImNtODc5cHZ0aDBlZjMya
 interface MapProps {
   center: [number, number];
   zoom: number;
-}
-
-interface Hotspot {
-  hotspot: string;
-  latitude: number;
-  longitude: number;
-  demand_score: number;
+  hotspots: PlacePrediction[];
+  loading: boolean;
+  onLocationUpdate?: (location: { lat: number; lng: number }) => void;
 }
 
 // Type for the pulsing dot
@@ -31,10 +29,24 @@ interface PulsingDot {
   render: () => boolean;
 }
 
+// Add ArrowIcon interface for the route arrows
+interface ArrowIcon {
+  width: number;
+  height: number;
+  data: Uint8ClampedArray;
+  context: CanvasRenderingContext2D | null;
+  onAdd: () => void;
+  render: () => boolean | true;
+}
+
 // Custom properties for hotspot features
 interface HotspotProperties {
-  hotspot: string;
+  name: string;
+  description: string;
   demand_score: number;
+  distance: number;
+  duration: number;
+  estimated_profit: number;
 }
 
 // Get color for demand score
@@ -53,56 +65,133 @@ const getDemandLevel = (score: number): string => {
   return 'Low';
 };
 
-const Map: React.FC<MapProps> = ({ center, zoom }) => {
+const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUpdate }) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const [driverLocation, setDriverLocation] = useState({ lat: center[1], lng: center[0] });
-  const [hotspots, setHotspots] = useState<Hotspot[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [selectedHotspot, setSelectedHotspot] = useState<Hotspot | null>(null);
+  const [selectedHotspot, setSelectedHotspot] = useState<PlacePrediction | null>(null);
   const popupRef = useRef<mapboxgl.Popup | null>(null);
+  const [isLoadingRoute, setIsLoadingRoute] = useState(false);
+  const [routeInfo, setRouteInfo] = useState<{distance: number, duration: number} | null>(null);
+  const [markers, setMarkers] = useState<mapboxgl.Marker[]>([]);
 
-  // Fetch hotspot predictions based on driver location
-  const fetchHotspots = async () => {
-    try {
-      setLoading(true);
-      console.log('Fetching hotspots for location:', driverLocation);
-      
-      const response = await predictHotspots({
-        latitude: driverLocation.lat,
-        longitude: driverLocation.lng
+  // Get user's current position if available
+  const getUserLocation = () => {
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          console.log('Got user location:', latitude, longitude);
+          updateDriverLocation({ lat: latitude, lng: longitude });
+        },
+        (error) => {
+          console.error('Error getting user location:', error);
+          // Fallback to Vijarahalli location
+          updateDriverLocation({ 
+            lat: VIJARAHALLI_LOCATION.latitude, 
+            lng: VIJARAHALLI_LOCATION.longitude 
+          });
+        }
+      );
+    } else {
+      console.log('Geolocation not available in this browser');
+      // Fallback to Vijarahalli location
+      updateDriverLocation({ 
+        lat: VIJARAHALLI_LOCATION.latitude, 
+        lng: VIJARAHALLI_LOCATION.longitude 
       });
-      
-      console.log('Received hotspot predictions:', response);
-      console.log('Top hotspots:', response.top_hotspots);
-      
-      setHotspots(response.top_hotspots);
-      
-      // Update map with new hotspots
-      updateMapHotspots(response.top_hotspots);
-    } catch (error) {
-      console.error('Error fetching hotspots:', error);
-    } finally {
-      setLoading(false);
     }
   };
 
-  // Update map with new hotspot data
-  const updateMapHotspots = (hotspotData: Hotspot[]) => {
-    if (!map.current) return;
+  // Update driver location and notify parent component
+  const updateDriverLocation = (location: { lat: number; lng: number }) => {
+    setDriverLocation(location);
+    if (onLocationUpdate) {
+      onLocationUpdate(location);
+    }
+  };
+
+  // Calculate estimated profit for a hotspot
+  const calculateProfit = (hotspot: PlacePrediction): number => {
+    // Calculate surge multiplier based on demand score
+    const surgeMultiplier = getSurgeMultiplierFromDemand(hotspot.demand_score);
     
-    // Convert hotspots to GeoJSON features
-    const hotspotFeatures = hotspotData.map(hotspot => ({
-      type: 'Feature',
-      properties: {
-        hotspot: hotspot.hotspot,
-        demand_score: hotspot.demand_score
-      },
-      geometry: {
-        type: 'Point',
-        coordinates: [hotspot.longitude, hotspot.latitude]
-      }
-    } as Feature<Point, HotspotProperties>));
+    // Calculate estimated fare
+    const fare = calculateEstimatedFare(hotspot.distance, hotspot.duration, surgeMultiplier);
+    
+    // Calculate driver's profit
+    return calculateDriverProfit(fare, hotspot.distance);
+  };
+
+  // Update map with new hotspot data
+  const updateMapHotspots = () => {
+    if (!map.current || hotspots.length === 0) return;
+    
+    // Clear existing markers
+    markers.forEach(marker => marker.remove());
+    setMarkers([]);
+    
+    // Create new markers for each hotspot with custom popup
+    const newMarkers = hotspots.map(hotspot => {
+      // Calculate estimated profit
+      const profit = calculateProfit(hotspot);
+      
+      // Create marker element
+      const markerElement = document.createElement('div');
+      markerElement.className = 'custom-marker';
+      markerElement.style.width = '30px';
+      markerElement.style.height = '30px';
+      markerElement.style.borderRadius = '50%';
+      markerElement.style.backgroundColor = getDemandColor(hotspot.demand_score);
+      markerElement.style.border = '3px solid white';
+      markerElement.style.boxShadow = '0 2px 6px rgba(0,0,0,0.3)';
+      markerElement.style.cursor = 'pointer';
+      markerElement.style.display = 'flex';
+      markerElement.style.justifyContent = 'center';
+      markerElement.style.alignItems = 'center';
+      markerElement.style.color = 'white';
+      markerElement.style.fontWeight = 'bold';
+      markerElement.style.fontSize = '14px';
+      
+      // Add profit label
+      markerElement.innerHTML = `<span>₹${profit}</span>`;
+
+      // Create marker
+      const marker = new mapboxgl.Marker(markerElement)
+        .setLngLat([hotspot.longitude, hotspot.latitude])
+        .addTo(map.current!);
+        
+      // Add click event
+      marker.getElement().addEventListener('click', () => {
+        setSelectedHotspot(hotspot);
+        displayRoute(hotspot);
+      });
+        
+      return marker;
+    });
+    
+    setMarkers(newMarkers);
+    
+    // Convert hotspots to GeoJSON features with profit information
+    const hotspotFeatures = hotspots.map(hotspot => {
+      const profit = calculateProfit(hotspot);
+      
+      return {
+        type: 'Feature',
+        properties: {
+          name: hotspot.name,
+          description: hotspot.description,
+          demand_score: hotspot.demand_score,
+          distance: hotspot.distance,
+          duration: hotspot.duration,
+          estimated_profit: profit
+        },
+        geometry: {
+          type: 'Point',
+          coordinates: [hotspot.longitude, hotspot.latitude]
+        }
+      } as Feature<Point, HotspotProperties>;
+    });
     
     // Update hotspots source if it exists, otherwise create it
     const source = map.current.getSource('hotspots');
@@ -123,72 +212,13 @@ const Map: React.FC<MapProps> = ({ center, zoom }) => {
         }
       });
       
-      // Add glow effect layer for hotspots
-      map.current.addLayer({
-        id: 'hotspots-glow',
-        type: 'circle',
-        source: 'hotspots',
-        paint: {
-          // Larger radius with blur for glow effect
-          'circle-radius': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            10, ['*', 15, ['get', 'demand_score']],
-            16, ['*', 40, ['get', 'demand_score']]
-          ],
-          // Color based on demand score
-          'circle-color': [
-            'interpolate',
-            ['linear'],
-            ['get', 'demand_score'],
-            0.2, 'rgba(124, 179, 66, 0.4)',  // Low - green with low opacity
-            0.4, 'rgba(255, 179, 0, 0.4)',   // Medium - amber with low opacity
-            0.6, 'rgba(251, 140, 0, 0.4)',   // High - orange with low opacity
-            0.8, 'rgba(229, 57, 53, 0.4)'    // Very high - red with low opacity
-          ],
-          'circle-blur': 1,
-          'circle-opacity': 0.7
-        }
-      });
-      
-      // Add main hotspot circles layer
-      map.current.addLayer({
-        id: 'hotspots-layer',
-        type: 'circle',
-        source: 'hotspots',
-        paint: {
-          // Size circles based on demand score and zoom level
-          'circle-radius': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            10, ['*', 7, ['get', 'demand_score']],
-            16, ['*', 20, ['get', 'demand_score']]
-          ],
-          // Color based on demand score
-          'circle-color': [
-            'interpolate',
-            ['linear'],
-            ['get', 'demand_score'],
-            0.2, '#7CB342',  // Low - green
-            0.4, '#FFB300',  // Medium - amber
-            0.6, '#FB8C00',  // High - orange
-            0.8, '#E53935'   // Very high - red
-          ],
-          'circle-stroke-color': 'white',
-          'circle-stroke-width': 2,
-          'circle-opacity': 0.9
-        }
-      });
-      
       // Add labels for hotspots
       map.current.addLayer({
         id: 'hotspots-label',
         type: 'symbol',
         source: 'hotspots',
         layout: {
-          'text-field': ['to-string', ['get', 'hotspot']],
+          'text-field': ['to-string', ['get', 'name']],
           'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
           'text-size': 12,
           'text-offset': [0, 2],
@@ -202,76 +232,348 @@ const Map: React.FC<MapProps> = ({ center, zoom }) => {
           'text-halo-width': 2
         }
       });
-      
-      // Add click interaction for hotspots
-      map.current.on('click', 'hotspots-layer', (e) => {
-        if (!e.features || e.features.length === 0 || !map.current) return;
-        
-        const feature = e.features[0] as mapboxgl.MapboxGeoJSONFeature;
-        
-        // Safely cast properties with null check
-        const properties = feature.properties as HotspotProperties | null;
-        if (!properties) return;
-        
-        // Handle Point geometry
-        const geometry = feature.geometry as GeoJSON.Point;
-        const coordinates = geometry.coordinates.slice() as [number, number];
-        
-        // Find the hotspot in our state
-        const clickedHotspot = hotspots.find(h => 
-          h.latitude.toFixed(5) === coordinates[1].toFixed(5) && 
-          h.longitude.toFixed(5) === coordinates[0].toFixed(5)
-        );
-        
-        if (clickedHotspot) {
-          setSelectedHotspot(clickedHotspot);
-        }
-        
-        // Remove existing popup if any
-        if (popupRef.current) {
-          popupRef.current.remove();
-        }
-        
-        // Format the demand score as a percentage
-        const demandScore = properties.demand_score;
-        const demandPercent = Math.round(demandScore * 100);
-        const demandColor = getDemandColor(demandScore);
-        const demandLevel = getDemandLevel(demandScore);
-        
-        // Create new popup
-        popupRef.current = new mapboxgl.Popup()
-          .setLngLat(coordinates)
-          .setHTML(`
-            <div style="font-family: Arial, sans-serif; padding: 10px; max-width: 250px;">
-              <h3 style="margin: 0 0 8px 0; color: ${demandColor}; font-weight: bold; font-size: 16px;">${properties.hotspot.split(' - ')[0]}</h3>
-              <p style="margin: 0 0 5px 0; font-size: 12px; color: #666;">${properties.hotspot.split(' - ')[1]}</p>
-              <div style="display: flex; align-items: center; margin-top: 8px;">
-                <div style="width: 12px; height: 12px; border-radius: 50%; background-color: ${demandColor}; margin-right: 8px;"></div>
-                <p style="margin: 0; font-weight: bold; color: ${demandColor};">${demandLevel} Demand: ${demandPercent}%</p>
-              </div>
-              <p style="margin: 8px 0 0 0; font-size: 12px;">
-                Coordinates: ${coordinates[1].toFixed(4)}, ${coordinates[0].toFixed(4)}
-              </p>
-            </div>
-          `)
-          .addTo(map.current);
-      });
-      
-      // Change cursor when hovering over hotspots
-      map.current.on('mouseenter', 'hotspots-layer', () => {
-        if (map.current) map.current.getCanvas().style.cursor = 'pointer';
-      });
-      
-      map.current.on('mouseleave', 'hotspots-layer', () => {
-        if (map.current) map.current.getCanvas().style.cursor = '';
-      });
     }
   };
 
-  // Fetch hotspots when driver location changes
-  useEffect(() => {
-    fetchHotspots();
-  }, [driverLocation]);
+  // Display optimized route to a hotspot
+  const displayRoute = async (hotspot: PlacePrediction) => {
+    if (!map.current) return;
+    
+    setIsLoadingRoute(true);
+    setRouteInfo(null);
+    
+    try {
+      // Clean up any existing route layers and sources
+      ['route-line', 'route-casing', 'route-outline', 'route-arrow'].forEach(layer => {
+        if (map.current && map.current.getLayer(layer)) {
+          map.current.removeLayer(layer);
+        }
+      });
+      
+      if (map.current.getSource('route')) {
+        map.current.removeSource('route');
+      }
+      
+      console.log('Getting route from Vijarahalli to', hotspot.name);
+      
+      // Get route details from Vijarahalli to destination using Mapbox Directions API
+      const routeDetails = await getRouteDetails(
+        VIJARAHALLI_LOCATION, // Always use Vijarahalli as origin
+        { latitude: hotspot.latitude, longitude: hotspot.longitude }
+      );
+      
+      console.log('Route details received:', {
+        distance: routeDetails.distance,
+        duration: routeDetails.duration,
+        geometryAvailable: !!routeDetails.geometry
+      });
+      
+      // Save route info for display
+      setRouteInfo({
+        distance: routeDetails.distance,
+        duration: routeDetails.duration
+      });
+      
+      // Update hotspot with accurate distance and duration from the route
+      hotspot.distance = routeDetails.distance;
+      hotspot.duration = routeDetails.duration;
+      
+      // Handle the route geometry
+      if (routeDetails.geometry) {
+        try {
+          const parsedGeometry = JSON.parse(routeDetails.geometry);
+          
+          if (!parsedGeometry || !parsedGeometry.coordinates || parsedGeometry.coordinates.length === 0) {
+            throw new Error('Invalid route geometry data');
+          }
+          
+          console.log('Valid route geometry with', parsedGeometry.coordinates.length, 'points');
+          
+          // Add the route source with the geometry
+          map.current.addSource('route', {
+            type: 'geojson',
+            data: {
+              type: 'Feature',
+              properties: {},
+              geometry: parsedGeometry
+            }
+          });
+          
+          // Add a casing layer for the route (the outline)
+          map.current.addLayer({
+            id: 'route-outline',
+            type: 'line',
+            source: 'route',
+            layout: {
+              'line-join': 'round',
+              'line-cap': 'round'
+            },
+            paint: {
+              'line-color': '#000',
+              'line-opacity': 0.5,
+              'line-width': 9
+            }
+          });
+          
+          // Add a white casing layer for the route (the outer glow)
+          map.current.addLayer({
+            id: 'route-casing',
+            type: 'line',
+            source: 'route',
+            layout: {
+              'line-join': 'round',
+              'line-cap': 'round'
+            },
+            paint: {
+              'line-color': '#fff',
+              'line-width': 7
+            }
+          });
+          
+          // Add the route line layer
+          map.current.addLayer({
+            id: 'route-line',
+            type: 'line',
+            source: 'route',
+            layout: {
+              'line-join': 'round',
+              'line-cap': 'round'
+            },
+            paint: {
+              'line-color': '#4285F4',
+              'line-width': 5
+            }
+          });
+          
+          // Add direction arrows along the route
+          map.current.addLayer({
+            id: 'route-arrow',
+            type: 'symbol',
+            source: 'route',
+            layout: {
+              'symbol-placement': 'line',
+              'symbol-spacing': 100,
+              'icon-image': 'arrow-icon',
+              'icon-size': 0.5,
+              'icon-allow-overlap': true,
+              'icon-ignore-placement': true,
+              'symbol-sort-key': 1
+            }
+          });
+          
+          // Create arrow icon for the route if it doesn't exist
+          if (!map.current.hasImage('arrow-icon')) {
+            const size = 20;
+            const arrowIcon: ArrowIcon = {
+              width: size,
+              height: size,
+              data: new Uint8ClampedArray(size * size * 4),
+              context: null,
+              
+              onAdd: function() {
+                const canvas = document.createElement('canvas');
+                canvas.width = this.width;
+                canvas.height = this.height;
+                this.context = canvas.getContext('2d');
+              },
+              
+              render: function() {
+                const context = this.context;
+                if (!context) return false;
+                
+                // Draw an arrow
+                context.clearRect(0, 0, this.width, this.height);
+                
+                // Arrow body
+                context.beginPath();
+                context.moveTo(2, 10);
+                context.lineTo(18, 10);
+                context.lineWidth = 2;
+                context.strokeStyle = '#4285F4';
+                context.stroke();
+                
+                // Arrow head
+                context.beginPath();
+                context.moveTo(18, 10);
+                context.lineTo(14, 6);
+                context.lineTo(14, 14);
+                context.closePath();
+                context.fillStyle = '#4285F4';
+                context.fill();
+                
+                this.data = context.getImageData(0, 0, this.width, this.height).data;
+                return true;
+              }
+            };
+            
+            map.current.addImage('arrow-icon', arrowIcon as any, { pixelRatio: 2 });
+          }
+          
+          // Fit map to show both points
+          const bounds = new mapboxgl.LngLatBounds();
+          
+          // Include origin (Vijarahalli)
+          bounds.extend([VIJARAHALLI_LOCATION.longitude, VIJARAHALLI_LOCATION.latitude]);
+          
+          // Include destination (hotspot)
+          bounds.extend([hotspot.longitude, hotspot.latitude]);
+          
+          // Also include all points in the route to ensure the entire route is visible
+          parsedGeometry.coordinates.forEach((coord: [number, number]) => {
+            bounds.extend(coord);
+          });
+          
+          // Fit the map to the route with padding
+          map.current.fitBounds(bounds, {
+            padding: { top: 100, bottom: 100, left: 100, right: 350 }, // Add extra padding on the right for the sidebar
+            maxZoom: 15,
+            duration: 1000
+          });
+          
+          // Update popup to include route info
+          updatePopupWithRouteInfo(hotspot);
+        } catch (error) {
+          console.error('Error parsing route geometry:', error);
+          fallbackRouteDisplay(hotspot);
+        }
+      } else {
+        console.error('No route geometry available');
+        fallbackRouteDisplay(hotspot);
+      }
+    } catch (error) {
+      console.error('Error displaying route:', error);
+      fallbackRouteDisplay(hotspot);
+    } finally {
+      setIsLoadingRoute(false);
+    }
+  };
+  
+  // Fallback route display when the Mapbox API fails
+  const fallbackRouteDisplay = (hotspot: PlacePrediction) => {
+    if (!map.current) return;
+    
+    try {
+      // Create a simple straight-line route as fallback
+      const routeGeometry: GeoJSON.LineString = {
+        type: "LineString",
+        coordinates: [
+          [VIJARAHALLI_LOCATION.longitude, VIJARAHALLI_LOCATION.latitude],
+          [hotspot.longitude, hotspot.latitude]
+        ]
+      };
+      
+      // Add the route source
+      map.current.addSource('route', {
+        type: 'geojson',
+        data: {
+          type: 'Feature',
+          properties: {},
+          geometry: routeGeometry
+        }
+      });
+      
+      // Add the route casing
+      map.current.addLayer({
+        id: 'route-casing',
+        type: 'line',
+        source: 'route',
+        layout: {
+          'line-join': 'round',
+          'line-cap': 'round'
+        },
+        paint: {
+          'line-color': '#2c3e50',
+          'line-width': 8,
+          'line-opacity': 0.6,
+          'line-dasharray': [0, 2]
+        }
+      });
+      
+      // Add the route line
+      map.current.addLayer({
+        id: 'route-line',
+        type: 'line',
+        source: 'route',
+        layout: {
+          'line-join': 'round',
+          'line-cap': 'round'
+        },
+        paint: {
+          'line-color': '#4285F4',
+          'line-width': 5,
+          'line-opacity': 0.8,
+          'line-dasharray': [0, 2, 1]
+        }
+      });
+      
+      // Fit the map to show both points
+      const bounds = new mapboxgl.LngLatBounds();
+      bounds.extend([VIJARAHALLI_LOCATION.longitude, VIJARAHALLI_LOCATION.latitude]);
+      bounds.extend([hotspot.longitude, hotspot.latitude]);
+      
+      map.current.fitBounds(bounds, {
+        padding: { top: 100, bottom: 100, left: 100, right: 350 },
+        maxZoom: 15,
+        duration: 1000
+      });
+      
+      // Show the popup with route information
+      updatePopupWithRouteInfo(hotspot);
+    } catch (fallbackError) {
+      console.error('Error displaying fallback route:', fallbackError);
+    }
+  };
+
+  // Update popup with route information
+  const updatePopupWithRouteInfo = (hotspot: PlacePrediction) => {
+    if (!map.current) return;
+    
+    if (popupRef.current) {
+      popupRef.current.remove();
+    }
+    
+    const demandScore = hotspot.demand_score;
+    const demandPercent = Math.round(demandScore * 100);
+    const demandColor = getDemandColor(demandScore);
+    const demandLevel = getDemandLevel(demandScore);
+    
+    // Calculate profit
+    const surgeMultiplier = getSurgeMultiplierFromDemand(demandScore);
+    const fare = calculateEstimatedFare(hotspot.distance, hotspot.duration, surgeMultiplier);
+    const profit = calculateDriverProfit(fare, hotspot.distance);
+    
+    popupRef.current = new mapboxgl.Popup({ offset: [0, -15], closeOnClick: false })
+      .setLngLat([hotspot.longitude, hotspot.latitude])
+      .setHTML(`
+        <div style="font-family: Arial, sans-serif; padding: 12px; max-width: 280px;">
+          <h3 style="margin: 0 0 8px 0; color: ${demandColor}; font-weight: bold; font-size: 16px;">${hotspot.name}</h3>
+          <p style="margin: 0 0 5px 0; font-size: 12px; color: #666;">${hotspot.description}</p>
+          <div style="display: flex; align-items: center; margin-top: 8px;">
+            <div style="width: 12px; height: 12px; border-radius: 50%; background-color: ${demandColor}; margin-right: 8px;"></div>
+            <p style="margin: 0; font-weight: bold; color: ${demandColor};">${demandLevel} Demand: ${demandPercent}%</p>
+          </div>
+          <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee;">
+            <p style="margin: 0 0 8px 0; font-size: 13px; font-weight: bold;">Optimal Route from Vijarahalli:</p>
+            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 8px;">
+              <span>Distance: ${hotspot.distance.toFixed(1)} km</span>
+              <span>ETA: ${Math.round(hotspot.duration)} min</span>
+            </div>
+            <div style="background-color: #f5f5f5; padding: 8px; border-radius: 6px; margin-top: 8px;">
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <span style="font-size: 13px; font-weight: bold;">Estimated Fare:</span>
+                <span style="font-size: 13px;">₹${fare}</span>
+              </div>
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
+                <span style="font-size: 14px; font-weight: bold; color: #388E3C;">Estimated Profit:</span>
+                <span style="font-size: 14px; font-weight: bold; color: #388E3C;">₹${profit}</span>
+              </div>
+              ${surgeMultiplier > 1.15 ? `<div style="font-size: 11px; color: #E53935; text-align: right; margin-top: 4px;">Includes ${Math.round((surgeMultiplier-1)*100)}% surge pricing</div>` : ''}
+            </div>
+          </div>
+        </div>
+      `)
+      .addTo(map.current);
+  };
 
   // Initialize map
   useEffect(() => {
@@ -292,30 +594,37 @@ const Map: React.FC<MapProps> = ({ center, zoom }) => {
     // Add attribution control
     map.current.addControl(new mapboxgl.AttributionControl({ compact: true }), 'bottom-right');
 
-    // Add current location marker
-    const marker = new mapboxgl.Marker({
-      color: '#FF6B00',
-      draggable: true
-    })
-      .setLngLat([driverLocation.lng, driverLocation.lat])
+    // Add current location marker for Vijarahalli
+    const vijarahalliMarkerElement = document.createElement('div');
+    vijarahalliMarkerElement.className = 'vijarahalli-marker';
+    vijarahalliMarkerElement.style.width = '25px';
+    vijarahalliMarkerElement.style.height = '25px';
+    vijarahalliMarkerElement.style.borderRadius = '50%';
+    vijarahalliMarkerElement.style.backgroundColor = '#3498db';
+    vijarahalliMarkerElement.style.border = '3px solid white';
+    vijarahalliMarkerElement.style.boxShadow = '0 2px 6px rgba(0,0,0,0.3)';
+    
+    const vijarahalliMarker = new mapboxgl.Marker(vijarahalliMarkerElement)
+      .setLngLat([VIJARAHALLI_LOCATION.longitude, VIJARAHALLI_LOCATION.latitude])
+      .setPopup(new mapboxgl.Popup().setHTML(`
+        <div style="padding: 8px; font-family: Arial, sans-serif;">
+          <strong>Vijarahalli</strong><br/>
+          <span style="font-size: 12px;">Your current location</span>
+        </div>
+      `))
       .addTo(map.current);
-
-    // Update driver location when marker is dragged
-    marker.on('dragend', () => {
-      const lngLat = marker.getLngLat();
-      setDriverLocation({ lat: lngLat.lat, lng: lngLat.lng });
-    });
 
     // Add pulsing dot effect for current location
     const size = 200;
-
+    
+    // Implementation of pulsing dot
     const pulsingDot: PulsingDot = {
       width: size,
       height: size,
       data: new Uint8ClampedArray(size * size * 4),
       context: null,
       
-      // Called when the layer is added to the map
+      // Get rendering context for the map canvas
       onAdd: function() {
         const canvas = document.createElement('canvas');
         canvas.width = this.width;
@@ -323,10 +632,8 @@ const Map: React.FC<MapProps> = ({ center, zoom }) => {
         this.context = canvas.getContext('2d');
       },
       
-      // Called on each frame to animate the dot
+      // Called once before every frame where the icon will be used
       render: function() {
-        if (!this.context) return false;
-        
         const duration = 1500;
         const t = (performance.now() % duration) / duration;
         
@@ -334,10 +641,10 @@ const Map: React.FC<MapProps> = ({ center, zoom }) => {
         const outerRadius = (size / 2) * 0.7 * t + radius;
         const context = this.context;
         
-        // Clear canvas
-        context.clearRect(0, 0, this.width, this.height);
+        if (!context) return true;
         
-        // Draw outer circle
+        // Draw the outer circle
+        context.clearRect(0, 0, this.width, this.height);
         context.beginPath();
         context.arc(
           this.width / 2,
@@ -346,10 +653,10 @@ const Map: React.FC<MapProps> = ({ center, zoom }) => {
           0,
           Math.PI * 2
         );
-        context.fillStyle = `rgba(255, 107, 0, ${1 - t})`;
+        context.fillStyle = `rgba(52, 152, 219, ${1 - t})`;
         context.fill();
         
-        // Draw inner circle
+        // Draw the inner circle
         context.beginPath();
         context.arc(
           this.width / 2,
@@ -358,15 +665,21 @@ const Map: React.FC<MapProps> = ({ center, zoom }) => {
           0,
           Math.PI * 2
         );
-        context.fillStyle = 'rgba(255, 107, 0, 1)';
+        context.fillStyle = 'rgba(52, 152, 219, 1)';
         context.strokeStyle = 'white';
-        context.lineWidth = 2;
+        context.lineWidth = 2 + 4 * (1 - t);
         context.fill();
         context.stroke();
         
-        this.data = context.getImageData(0, 0, this.width, this.height).data;
+        // Update this image's data with data from the canvas
+        this.data = context.getImageData(
+          0,
+          0,
+          this.width,
+          this.height
+        ).data;
         
-        map.current?.triggerRepaint();
+        // Return true to keep the map repainting
         return true;
       }
     };
@@ -387,7 +700,7 @@ const Map: React.FC<MapProps> = ({ center, zoom }) => {
               properties: {},
               geometry: {
                 type: 'Point',
-                coordinates: [driverLocation.lng, driverLocation.lat]
+                coordinates: [VIJARAHALLI_LOCATION.longitude, VIJARAHALLI_LOCATION.latitude]
               }
             }
           ]
@@ -405,8 +718,38 @@ const Map: React.FC<MapProps> = ({ center, zoom }) => {
         }
       });
 
-      // Initial fetch of hotspots
-      fetchHotspots();
+      // Add a label for Vijarahalli
+      map.current?.addSource('vijarahalli-label', {
+        type: 'geojson',
+        data: {
+          type: 'Feature',
+          properties: {
+            name: 'Vijarahalli (Current Location)'
+          },
+          geometry: {
+            type: 'Point',
+            coordinates: [VIJARAHALLI_LOCATION.longitude, VIJARAHALLI_LOCATION.latitude]
+          }
+        }
+      });
+      
+      map.current?.addLayer({
+        id: 'vijarahalli-text',
+        type: 'symbol',
+        source: 'vijarahalli-label',
+        layout: {
+          'text-field': ['get', 'name'],
+          'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+          'text-size': 14,
+          'text-offset': [0, -2],
+          'text-anchor': 'bottom'
+        },
+        paint: {
+          'text-color': '#3498db',
+          'text-halo-color': 'rgba(255, 255, 255, 0.9)',
+          'text-halo-width': 2
+        }
+      });
     });
 
     // Cleanup when component unmounts
@@ -418,38 +761,13 @@ const Map: React.FC<MapProps> = ({ center, zoom }) => {
     };
   }, []); // Empty dependency array so this only runs once on mount
 
-  // Update dot position when driver location changes
+  // Update map when hotspots change
   useEffect(() => {
-    if (!map.current) return;
-    
-    // Update dot point source with new coordinates
-    const source = map.current.getSource('dot-point');
-    if (source) {
-      (source as mapboxgl.GeoJSONSource).setData({
-        type: 'FeatureCollection',
-        features: [
-          {
-            type: 'Feature',
-            properties: {},
-            geometry: {
-              type: 'Point',
-              coordinates: [driverLocation.lng, driverLocation.lat]
-            }
-          }
-        ]
-      });
-    }
-    
-    // Center map on new driver location
-    map.current.flyTo({
-      center: [driverLocation.lng, driverLocation.lat],
-      speed: 1.5,
-      essential: true
-    });
-  }, [driverLocation]);
+    updateMapHotspots();
+  }, [hotspots]);
 
   // Function to fly to a hotspot
-  const flyToHotspot = (hotspot: Hotspot) => {
+  const flyToHotspot = (hotspot: PlacePrediction) => {
     if (!map.current) return;
     
     map.current.flyTo({
@@ -461,41 +779,17 @@ const Map: React.FC<MapProps> = ({ center, zoom }) => {
     
     setSelectedHotspot(hotspot);
     
-    // Create new popup for the hotspot
-    if (popupRef.current) {
-      popupRef.current.remove();
-    }
-    
-    const demandScore = hotspot.demand_score;
-    const demandPercent = Math.round(demandScore * 100);
-    const demandColor = getDemandColor(demandScore);
-    const demandLevel = getDemandLevel(demandScore);
-    const [name, description] = hotspot.hotspot.split(' - ');
-    
-    popupRef.current = new mapboxgl.Popup()
-      .setLngLat([hotspot.longitude, hotspot.latitude])
-          .setHTML(`
-        <div style="font-family: Arial, sans-serif; padding: 10px; max-width: 250px;">
-          <h3 style="margin: 0 0 8px 0; color: ${demandColor}; font-weight: bold; font-size: 16px;">${name}</h3>
-          <p style="margin: 0 0 5px 0; font-size: 12px; color: #666;">${description}</p>
-          <div style="display: flex; align-items: center; margin-top: 8px;">
-            <div style="width: 12px; height: 12px; border-radius: 50%; background-color: ${demandColor}; margin-right: 8px;"></div>
-            <p style="margin: 0; font-weight: bold; color: ${demandColor};">${demandLevel} Demand: ${demandPercent}%</p>
-          </div>
-          <p style="margin: 8px 0 0 0; font-size: 12px;">
-            Coordinates: ${hotspot.latitude.toFixed(4)}, ${hotspot.longitude.toFixed(4)}
-          </p>
-            </div>
-          `)
-      .addTo(map.current);
+    // Display route to the hotspot
+    displayRoute(hotspot);
   };
 
   return (
     <div className="w-full h-full relative rounded-3xl shadow-inner">
       <div ref={mapContainer} className="w-full h-full rounded-3xl"/>
       
+      {/* Loading indicators */}
       {loading && (
-        <div className="absolute top-4 right-4 bg-white p-2 rounded shadow z-10">
+        <div className="absolute top-4 left-4 bg-white p-2 rounded shadow z-10">
           <div className="flex items-center">
             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-purple-700 mr-2"></div>
             <span>Predicting hotspots...</span>
@@ -503,28 +797,52 @@ const Map: React.FC<MapProps> = ({ center, zoom }) => {
         </div>
       )}
       
-      {/* Hotspot predictions sidebar */}
-      <div className="absolute top-4 right-4 bottom-4 bg-white rounded-xl shadow-lg z-10 w-72 overflow-hidden flex flex-col">
-        <div className="bg-purple-700 text-white py-3 px-4">
-          <h3 className="font-bold text-lg">Demand Hotspots</h3>
-          <p className="text-xs text-purple-200">Predicted high-demand areas near you</p>
+      {isLoadingRoute && (
+        <div className="absolute top-16 left-4 bg-white p-2 rounded shadow z-10">
+          <div className="flex items-center">
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+            <span>Calculating optimal route...</span>
+          </div>
         </div>
-        
-        <div className="flex-1 overflow-auto p-3">
-          {hotspots.length === 0 ? (
-            <div className="text-center text-gray-500 p-4">
-              No hotspots found nearby
-            </div>
-          ) : (
+      )}
+      
+      {/* Button to return to Vijarahalli */}
+      <button 
+        className="absolute bottom-24 right-4 bg-white p-2 rounded-full shadow-md z-10 hover:bg-gray-100"
+        onClick={() => {
+          if (!map.current) return;
+          map.current.flyTo({
+            center: [VIJARAHALLI_LOCATION.longitude, VIJARAHALLI_LOCATION.latitude],
+            zoom: 13,
+            speed: 1.5
+          });
+        }}
+        title="Return to Vijarahalli"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+          <polyline points="9 22 9 12 15 12 15 22"></polyline>
+        </svg>
+      </button>
+      
+      {/* Hotspot predictions sidebar - only shown when hotspots are available */}
+      {hotspots.length > 0 && (
+        <div className="absolute top-4 right-4 bottom-4 bg-white rounded-xl shadow-lg z-10 w-72 overflow-hidden flex flex-col">
+          <div className="bg-purple-700 text-white py-3 px-4">
+            <h3 className="font-bold text-lg">Demand Hotspots</h3>
+            <p className="text-xs text-purple-200">Nearest high-demand areas from Vijarahalli</p>
+          </div>
+          
+          <div className="flex-1 overflow-auto p-3">
             <div className="space-y-3">
               {hotspots.map((hotspot, index) => {
                 const isSelected = selectedHotspot === hotspot;
                 const demandScore = Math.round(hotspot.demand_score * 100);
                 const demandColor = getDemandColor(hotspot.demand_score);
                 const demandLevel = getDemandLevel(hotspot.demand_score);
-                const [name, description] = hotspot.hotspot.split(' - ');
-
-  return (
+                const profit = calculateProfit(hotspot);
+                
+                return (
                   <div 
                     key={index} 
                     className={`
@@ -534,7 +852,7 @@ const Map: React.FC<MapProps> = ({ center, zoom }) => {
                     onClick={() => flyToHotspot(hotspot)}
                   >
                     <div className="flex justify-between items-start">
-                      <div className="font-medium text-gray-800">{name}</div>
+                      <div className="font-medium text-gray-800">{hotspot.name}</div>
                       <div 
                         className="text-xs font-bold px-2 py-1 rounded-full"
                         style={{ 
@@ -545,32 +863,42 @@ const Map: React.FC<MapProps> = ({ center, zoom }) => {
                         {demandScore}%
                       </div>
                     </div>
-                    <div className="text-xs text-gray-500 mt-1">{description}</div>
+                    <div className="text-xs text-gray-500 mt-1">{hotspot.description}</div>
                     <div className="flex items-center mt-2">
-                      <div 
-                        className="w-2 h-2 rounded-full mr-2"
-                        style={{ backgroundColor: demandColor }}
-                      ></div>
-                      <div className="text-xs" style={{ color: demandColor }}>
-                        {demandLevel} Demand
+                      <div className="h-1.5 w-1.5 rounded-full mr-1.5" style={{ backgroundColor: demandColor }}></div>
+                      <span className="text-xs" style={{ color: demandColor }}>{demandLevel} Demand</span>
+                    </div>
+                    
+                    <div className="mt-3 pt-3 border-t border-gray-200">
+                      <div className="flex justify-between items-center text-xs text-gray-600">
+                        <div className="flex items-center">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1">
+                            <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path>
+                            <circle cx="12" cy="10" r="3"></circle>
+                          </svg>
+                          <span>{hotspot.distance.toFixed(1)} km</span>
+                        </div>
+                        <div className="flex items-center">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <polyline points="12 6 12 12 16 14"></polyline>
+                          </svg>
+                          <span>{Math.round(hotspot.duration)} min</span>
+                        </div>
+                      </div>
+                      
+                      <div className="mt-2 bg-green-50 p-2 rounded-md flex justify-between items-center">
+                        <span className="text-xs font-medium text-green-800">Est. Profit:</span>
+                        <span className="text-sm font-bold text-green-700">₹{profit}</span>
                       </div>
                     </div>
                   </div>
                 );
               })}
             </div>
-          )}
-        </div>
-        
-        <div className="bg-gray-50 p-3 border-t border-gray-200">
-          <div className="flex items-center text-xs text-gray-500">
-            <span>Driver Location: {driverLocation.lat.toFixed(5)}, {driverLocation.lng.toFixed(5)}</span>
-          </div>
-          <div className="mt-2 text-xs text-gray-600">
-            <p>Drag the orange marker to update predictions</p>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

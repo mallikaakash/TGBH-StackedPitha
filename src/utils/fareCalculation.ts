@@ -194,3 +194,87 @@ export const calculateDynamicFare = async (
     }
   };
 };
+
+/**
+ * Fare Calculation Utility
+ * 
+ * This module provides functions to calculate estimated fares and profits
+ * for ride requests based on distance, duration, and demand.
+ */
+
+/**
+ * Calculate the estimated fare for a ride
+ * 
+ * @param distance - Distance in kilometers
+ * @param duration - Duration in minutes
+ * @param demandMultiplier - Optional surge pricing multiplier based on demand (default: 1.0)
+ * @returns The estimated fare in rupees
+ */
+export const calculateEstimatedFare = (
+  distance: number,
+  duration: number,
+  demandMultiplier: number = 1.0
+): number => {
+  // Base fare calculation
+  const baseFare = 30; // Base fare in rupees
+  const perKmRate = 12; // Rate per kilometer in rupees
+  const perMinuteRate = 1.5; // Rate per minute in rupees
+  
+  // Calculate components
+  const distanceCharge = distance * perKmRate;
+  const timeCharge = duration * perMinuteRate;
+  
+  // Total before surge
+  const subtotal = baseFare + distanceCharge + timeCharge;
+  
+  // Apply demand multiplier (surge pricing)
+  const surge = demandMultiplier > 1.0 ? subtotal * (demandMultiplier - 1.0) : 0;
+  
+  // Final fare with surge
+  const totalFare = subtotal + surge;
+  
+  // Round to nearest rupee
+  return Math.round(totalFare);
+};
+
+/**
+ * Calculate the estimated driver profit for a ride
+ * 
+ * @param fare - The total fare in rupees
+ * @param distance - Distance in kilometers (for calculating operational expenses)
+ * @returns The estimated profit in rupees
+ */
+export const calculateDriverProfit = (
+  fare: number,
+  distance: number
+): number => {
+  // Platform fee (percentage taken by the platform)
+  const platformFeePercentage = 0.20; // 20% platform fee
+  
+  // Estimate operational expenses (fuel, maintenance, etc.)
+  const operationalExpensePerKm = 5; // Rupees per km
+  const operationalExpenses = distance * operationalExpensePerKm;
+  
+  // Calculate driver's earnings after platform fee
+  const driverEarnings = fare * (1 - platformFeePercentage);
+  
+  // Final profit after operational expenses
+  const profit = driverEarnings - operationalExpenses;
+  
+  // Return rounded profit (can be negative for very short or problematic rides)
+  return Math.round(Math.max(0, profit));
+};
+
+/**
+ * Calculate estimated surge multiplier based on demand score
+ * 
+ * @param demandScore - Demand score between 0 and 1
+ * @returns Surge multiplier between 1.0 and 2.0
+ */
+export const getSurgeMultiplierFromDemand = (demandScore: number): number => {
+  // Map demand score (0-1) to surge multiplier (1.0-2.0)
+  // High demand (0.8-1.0) -> 1.8-2.0 surge
+  // Medium demand (0.4-0.8) -> 1.3-1.8 surge
+  // Low demand (0.0-0.4) -> 1.0-1.3 surge
+  return 1.0 + (demandScore * 1.0);
+};
