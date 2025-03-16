@@ -401,4 +401,332 @@ export const getStaticMapImageUrl = (
   
   // Return the static map URL
   return `https://api.mapbox.com/styles/v1/mapbox/streets-v11/static/${markers}/auto/${width}x${height}?access_token=${MAPBOX_TOKEN}`;
+};
+
+/**
+ * CategoryInfo interface for POI types
+ */
+export interface CategoryInfo {
+  category: string;
+  displayName: string;
+  relevantTimes?: {
+    start: number; // Hour in 24h format
+    end: number;   // Hour in 24h format
+  };
+  description: string;
+}
+
+/**
+ * Point of Interest (POI) interface
+ */
+export interface PointOfInterest {
+  name: string;
+  category: string;
+  distance: number;  // in kilometers
+  coordinates: Coordinates;
+  relevantTimeInfo?: string;
+  estimatedDemand?: string;
+}
+
+/**
+ * Categories of POIs that are relevant for drivers with time-based relevance info
+ */
+export const POI_CATEGORIES: CategoryInfo[] = [
+  { 
+    category: 'school', 
+    displayName: 'School',
+    relevantTimes: { start: 7, end: 16 },
+    description: 'Schools have high demand during drop-off (7-9 AM) and pick-up times (2-4 PM).'
+  },
+  { 
+    category: 'college', 
+    displayName: 'College/University',
+    relevantTimes: { start: 8, end: 21 },
+    description: 'Colleges have steady demand throughout the day with peaks before and after classes.'
+  },
+  { 
+    category: 'hospital', 
+    displayName: 'Hospital',
+    description: 'Hospitals have consistent demand throughout the day and night, but typically less competition during night hours.'
+  },
+  { 
+    category: 'stadium', 
+    displayName: 'Stadium/Sports Venue',
+    description: 'High demand after events end. Check for ongoing/upcoming events.'
+  },
+  { 
+    category: 'park', 
+    displayName: 'Park/Recreation Area',
+    relevantTimes: { start: 8, end: 19 },
+    description: 'Parks are busier on evenings and weekends with peak exit times in late afternoon.'
+  },
+  { 
+    category: 'mall', 
+    displayName: 'Shopping Mall',
+    relevantTimes: { start: 10, end: 21 },
+    description: 'Malls have higher demand during closing hours and weekends.'
+  },
+  { 
+    category: 'restaurant', 
+    displayName: 'Restaurant/Food Area',
+    relevantTimes: { start: 12, end: 23 },
+    description: 'Restaurants have peaks during lunch (12-2 PM) and dinner (7-10 PM) hours.'
+  },
+  { 
+    category: 'hotel', 
+    displayName: 'Hotel',
+    description: 'Hotels have morning checkout (8-11 AM) and evening check-in (4-9 PM) peaks.'
+  },
+  { 
+    category: 'office', 
+    displayName: 'Office/Business District',
+    relevantTimes: { start: 8, end: 19 },
+    description: 'Office areas have high demand during evening rush hour (5-7 PM).'
+  },
+  { 
+    category: 'railway_station', 
+    displayName: 'Railway Station',
+    description: 'Train stations have peak demand aligned with train arrival/departure times.'
+  },
+  { 
+    category: 'bus_station', 
+    displayName: 'Bus Station',
+    description: 'Bus stations have consistent demand with peaks during commute hours.'
+  },
+  { 
+    category: 'airport', 
+    displayName: 'Airport',
+    description: 'Airports have demand patterns based on flight schedules, often higher late evening and early morning.'
+  }
+];
+
+/**
+ * Fetches nearby points of interest (POIs) around a given location
+ * 
+ * @param location - Center coordinates for the search
+ * @param radius - Search radius in kilometers (default 5)
+ * @param categories - Array of POI categories to search for (default: all categories)
+ * @returns Promise resolving to an array of POIs with relevant information
+ */
+export const getNearbyPointsOfInterest = async (
+  location: Coordinates,
+  radius: number = 5,
+  categories: string[] = POI_CATEGORIES.map(cat => cat.category)
+): Promise<PointOfInterest[]> => {
+  try {
+    const pois: PointOfInterest[] = [];
+    const currentHour = new Date().getHours();
+    const isWeekend = [0, 6].includes(new Date().getDay());
+    
+    // Process each category in parallel
+    await Promise.all(categories.map(async (category) => {
+      try {
+        // Get category info
+        const categoryInfo = POI_CATEGORIES.find(c => c.category === category);
+        if (!categoryInfo) return;
+        
+        // Convert radius to meters for Mapbox API
+        const radiusMeters = radius * 1000;
+        
+        // Create proximity parameter (longitude,latitude)
+        const proximity = `${location.longitude},${location.latitude}`;
+        
+        // Some categories need mapping to Mapbox's POI types
+        let mapboxCategory = category;
+        if (category === 'stadium') mapboxCategory = 'stadium';
+        if (category === 'college') mapboxCategory = 'college,university';
+        
+        // Create URL for Mapbox Geocoding API with category and proximity
+        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${mapboxCategory}.json?proximity=${proximity}&limit=5&types=poi&access_token=${MAPBOX_TOKEN}`;
+        
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+          throw new Error(`Mapbox API error: ${response.status} ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.features && data.features.length > 0) {
+          // Process each POI
+          for (const feature of data.features) {
+            // Calculate direct distance
+            const poiCoordinates: Coordinates = {
+              longitude: feature.center[0],
+              latitude: feature.center[1]
+            };
+            
+            const distance = calculateDirectDistance(location, poiCoordinates);
+            
+            // Skip if outside the requested radius
+            if (distance > radius) continue;
+            
+            // Generate relevance information based on time
+            let relevantTimeInfo = "";
+            let estimatedDemand = "Medium";
+            
+            // Check if current time falls within relevant hours for the category
+            if (categoryInfo.relevantTimes) {
+              const { start, end } = categoryInfo.relevantTimes;
+              const isRelevantHour = currentHour >= start && currentHour <= end;
+              
+              if (isRelevantHour) {
+                // Adjust weekend vs weekday logic for certain categories
+                if (category === 'school' && isWeekend) {
+                  relevantTimeInfo = "Schools are closed on weekends. Low demand expected.";
+                  estimatedDemand = "Low";
+                } else if (category === 'office' && isWeekend) {
+                  relevantTimeInfo = "Limited office activity on weekends. Lower demand expected.";
+                  estimatedDemand = "Low";
+                } else if (category === 'school' && (currentHour >= 14 && currentHour <= 16)) {
+                  relevantTimeInfo = "School pickup time. High demand expected.";
+                  estimatedDemand = "High";
+                } else if (category === 'park' && isWeekend) {
+                  relevantTimeInfo = "Weekend park visits are common. Moderate to high demand expected.";
+                  estimatedDemand = "High";
+                } else if (category === 'mall' && (currentHour >= 17 && isWeekend)) {
+                  relevantTimeInfo = "Peak shopping time on weekend evening. High demand expected.";
+                  estimatedDemand = "High";
+                } else if (category === 'restaurant' && ((currentHour >= 12 && currentHour <= 14) || (currentHour >= 19 && currentHour <= 22))) {
+                  relevantTimeInfo = `${currentHour >= 19 ? "Dinner" : "Lunch"} time. High demand for rides expected.`;
+                  estimatedDemand = "High";
+                } else {
+                  relevantTimeInfo = `Operating hours. ${isWeekend ? "Weekend" : "Weekday"} activity expected.`;
+                  estimatedDemand = "Medium";
+                }
+              } else {
+                if (currentHour < start) {
+                  relevantTimeInfo = `Not yet active hours. Low current demand, will increase after ${start}:00.`;
+                } else {
+                  relevantTimeInfo = `After peak hours. Low current demand.`;
+                }
+                estimatedDemand = "Low";
+              }
+            } else if (category === 'hospital') {
+              // Special case for 24/7 venues like hospitals
+              relevantTimeInfo = "24/7 operation. Consistent demand expected.";
+              estimatedDemand = "Medium";
+            } else if (category === 'airport') {
+              // Airports have specific patterns
+              if (currentHour >= 22 || currentHour <= 6) {
+                relevantTimeInfo = "Late night/early morning flights. Moderate demand expected.";
+                estimatedDemand = "Medium-High";
+              } else {
+                relevantTimeInfo = "Regular flight operations. Steady demand expected.";
+                estimatedDemand = "Medium";
+              }
+            }
+            
+            // Add to POIs array
+            pois.push({
+              name: feature.text,
+              category: categoryInfo.displayName,
+              distance,
+              coordinates: poiCoordinates,
+              relevantTimeInfo,
+              estimatedDemand
+            });
+          }
+        }
+      } catch (error) {
+        console.error(`Error fetching ${category} POIs:`, error);
+      }
+    }));
+    
+    // Sort POIs by distance
+    return pois.sort((a, b) => a.distance - b.distance);
+  } catch (error) {
+    console.error('Error fetching nearby points of interest:', error);
+    return [];
+  }
+};
+
+/**
+ * Helper function to get contextual summaries of nearby POIs for driver guidance
+ * 
+ * @param location - Center coordinates for the search
+ * @returns Promise resolving to a structured summary object
+ */
+export const getPOIContextualSummary = async (
+  location: Coordinates
+): Promise<{
+  summary: string;
+  highDemandPOIs: PointOfInterest[];
+  timeSensitivePOIs: PointOfInterest[];
+  nearbyPOIs: PointOfInterest[];
+}> => {
+  try {
+    // Get all POIs
+    const allPOIs = await getNearbyPointsOfInterest(location);
+    
+    // No POIs found
+    if (allPOIs.length === 0) {
+      return {
+        summary: "No notable points of interest found nearby.",
+        highDemandPOIs: [],
+        timeSensitivePOIs: [],
+        nearbyPOIs: []
+      };
+    }
+    
+    // Current time context
+    const currentHour = new Date().getHours();
+    const currentTime = new Date().toLocaleTimeString();
+    const isWeekend = [0, 6].includes(new Date().getDay());
+    const dayType = isWeekend ? "weekend" : "weekday";
+    
+    // Filter POIs by demand and time sensitivity
+    const highDemandPOIs = allPOIs.filter(poi => poi.estimatedDemand === "High");
+    
+    // Time-sensitive POIs based on contextual factors
+    const timeSensitivePOIs = allPOIs.filter(poi => {
+      // School pickup time
+      if (poi.category === "School" && currentHour >= 14 && currentHour <= 16 && !isWeekend) return true;
+      // Restaurant during meal times
+      if (poi.category === "Restaurant/Food Area" && ((currentHour >= 12 && currentHour <= 14) || (currentHour >= 19 && currentHour <= 22))) return true;
+      // Office closing time
+      if (poi.category === "Office/Business District" && currentHour >= 17 && currentHour <= 19 && !isWeekend) return true;
+      // Shopping mall closing time
+      if (poi.category === "Shopping Mall" && currentHour >= 19 && currentHour <= 21) return true;
+      
+      return false;
+    });
+    
+    // Nearby POIs (closest 5)
+    const nearbyPOIs = [...allPOIs].sort((a, b) => a.distance - b.distance).slice(0, 5);
+    
+    // Generate natural language summary
+    let summary = `At ${currentTime} on this ${dayType}, we've analyzed points of interest near your location:\n\n`;
+    
+    if (highDemandPOIs.length > 0) {
+      summary += "**High demand areas:**\n";
+      highDemandPOIs.slice(0, 3).forEach(poi => {
+        summary += `- ${poi.name} (${poi.category}, ${poi.distance.toFixed(1)} km): ${poi.relevantTimeInfo}\n`;
+      });
+      summary += "\n";
+    }
+    
+    if (timeSensitivePOIs.length > 0) {
+      summary += "**Time-sensitive opportunities:**\n";
+      timeSensitivePOIs.slice(0, 3).forEach(poi => {
+        summary += `- ${poi.name} (${poi.category}, ${poi.distance.toFixed(1)} km): ${poi.relevantTimeInfo}\n`;
+      });
+      summary += "\n";
+    }
+    
+    return {
+      summary,
+      highDemandPOIs,
+      timeSensitivePOIs,
+      nearbyPOIs
+    };
+  } catch (error) {
+    console.error('Error generating POI summary:', error);
+    return {
+      summary: "Unable to analyze nearby points of interest.",
+      highDemandPOIs: [],
+      timeSensitivePOIs: [],
+      nearbyPOIs: []
+    };
+  }
 }; 

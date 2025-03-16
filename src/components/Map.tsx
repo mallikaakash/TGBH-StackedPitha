@@ -51,10 +51,10 @@ interface HotspotProperties {
 
 // Get color for demand score
 const getDemandColor = (score: number): string => {
-  if (score >= 0.8) return '#E53935'; // High demand - red
-  if (score >= 0.6) return '#FB8C00'; // Medium-high demand - orange
-  if (score >= 0.4) return '#FFB300'; // Medium demand - amber
-  return '#7CB342'; // Low demand - light green
+  if (score >= 0.8) return '#FF9800'; // Orange for high demand
+  if (score >= 0.6) return '#FF9800'; // Orange for medium-high demand
+  if (score >= 0.4) return '#FF9800'; // Orange for medium demand
+  return '#FF9800'; // Orange for low demand too - consistent color
 };
 
 // Get text description for demand level
@@ -136,15 +136,36 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
       // Calculate estimated profit
       const profit = calculateProfit(hotspot);
       
-      // Create marker element
+      // Create marker container with pulsating effect
+      const markerContainer = document.createElement('div');
+      markerContainer.className = 'marker-container';
+      markerContainer.style.position = 'relative';
+      markerContainer.style.width = '42px';
+      markerContainer.style.height = '42px';
+      
+      // Create pulsing ring animation
+      const pulseRing = document.createElement('div');
+      pulseRing.className = 'pulse-ring';
+      pulseRing.style.position = 'absolute';
+      pulseRing.style.width = '100%';
+      pulseRing.style.height = '100%';
+      pulseRing.style.borderRadius = '50%';
+      pulseRing.style.backgroundColor = '#FF9800'; // Orange color
+      pulseRing.style.opacity = '0.6';
+      pulseRing.style.animation = 'pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite';
+      
+      // Create marker element (inner dot)
       const markerElement = document.createElement('div');
       markerElement.className = 'custom-marker';
+      markerElement.style.position = 'absolute';
+      markerElement.style.top = '6px';
+      markerElement.style.left = '6px';
       markerElement.style.width = '30px';
       markerElement.style.height = '30px';
       markerElement.style.borderRadius = '50%';
-      markerElement.style.backgroundColor = getDemandColor(hotspot.demand_score);
+      markerElement.style.backgroundColor = '#FF9800'; // Orange color
       markerElement.style.border = '3px solid white';
-      markerElement.style.boxShadow = '0 2px 6px rgba(0,0,0,0.3)';
+      markerElement.style.boxShadow = '0 2px 8px rgba(0,0,0,0.4)';
       markerElement.style.cursor = 'pointer';
       markerElement.style.display = 'flex';
       markerElement.style.justifyContent = 'center';
@@ -152,12 +173,17 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
       markerElement.style.color = 'white';
       markerElement.style.fontWeight = 'bold';
       markerElement.style.fontSize = '14px';
+      markerElement.style.zIndex = '2';
       
       // Add profit label
       markerElement.innerHTML = `<span>₹${profit}</span>`;
+      
+      // Add elements to container
+      markerContainer.appendChild(pulseRing);
+      markerContainer.appendChild(markerElement);
 
       // Create marker
-      const marker = new mapboxgl.Marker(markerElement)
+      const marker = new mapboxgl.Marker(markerContainer)
         .setLngLat([hotspot.longitude, hotspot.latitude])
         .addTo(map.current!);
         
@@ -171,6 +197,28 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
     });
     
     setMarkers(newMarkers);
+    
+    // Add CSS animation for pulsing effect
+    if (!document.getElementById('pulse-animation')) {
+      const styleElement = document.createElement('style');
+      styleElement.id = 'pulse-animation';
+      styleElement.textContent = `
+        @keyframes pulse-ring {
+          0% {
+            transform: scale(0.8);
+            opacity: 0.6;
+          }
+          50% {
+            opacity: 0.3;
+          }
+          100% {
+            transform: scale(1.4);
+            opacity: 0;
+          }
+        }
+      `;
+      document.head.appendChild(styleElement);
+    }
     
     // Convert hotspots to GeoJSON features with profit information
     const hotspotFeatures = hotspots.map(hotspot => {
@@ -212,7 +260,7 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
         }
       });
       
-      // Add labels for hotspots
+      // Add labels for hotspots with larger, more visible text
       map.current.addLayer({
         id: 'hotspots-label',
         type: 'symbol',
@@ -220,15 +268,15 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
         layout: {
           'text-field': ['to-string', ['get', 'name']],
           'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
-          'text-size': 12,
-          'text-offset': [0, 2],
+          'text-size': 14,
+          'text-offset': [0, 2.5],
           'text-anchor': 'top',
           'text-allow-overlap': false,
           'text-ignore-placement': false
         },
         paint: {
           'text-color': '#333',
-          'text-halo-color': 'rgba(255, 255, 255, 0.8)',
+          'text-halo-color': 'rgba(255, 255, 255, 0.9)',
           'text-halo-width': 2
         }
       });
@@ -534,7 +582,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
     
     const demandScore = hotspot.demand_score;
     const demandPercent = Math.round(demandScore * 100);
-    const demandColor = getDemandColor(demandScore);
     const demandLevel = getDemandLevel(demandScore);
     
     // Calculate profit
@@ -542,15 +589,15 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
     const fare = calculateEstimatedFare(hotspot.distance, hotspot.duration, surgeMultiplier);
     const profit = calculateDriverProfit(fare, hotspot.distance);
     
-    popupRef.current = new mapboxgl.Popup({ offset: [0, -15], closeOnClick: false })
+    popupRef.current = new mapboxgl.Popup({ offset: [0, -15], closeOnClick: false, maxWidth: '300px' })
       .setLngLat([hotspot.longitude, hotspot.latitude])
       .setHTML(`
         <div style="font-family: Arial, sans-serif; padding: 12px; max-width: 280px;">
-          <h3 style="margin: 0 0 8px 0; color: ${demandColor}; font-weight: bold; font-size: 16px;">${hotspot.name}</h3>
+          <h3 style="margin: 0 0 8px 0; color: #FF9800; font-weight: bold; font-size: 16px;">${hotspot.name}</h3>
           <p style="margin: 0 0 5px 0; font-size: 12px; color: #666;">${hotspot.description}</p>
           <div style="display: flex; align-items: center; margin-top: 8px;">
-            <div style="width: 12px; height: 12px; border-radius: 50%; background-color: ${demandColor}; margin-right: 8px;"></div>
-            <p style="margin: 0; font-weight: bold; color: ${demandColor};">${demandLevel} Demand: ${demandPercent}%</p>
+            <div style="width: 12px; height: 12px; border-radius: 50%; background-color: #FF9800; margin-right: 8px;"></div>
+            <p style="margin: 0; font-weight: bold; color: #FF9800;">${demandLevel} Demand: ${demandPercent}%</p>
           </div>
           <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee;">
             <p style="margin: 0 0 8px 0; font-size: 13px; font-weight: bold;">Optimal Route from Vijarahalli:</p>
@@ -558,14 +605,14 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
               <span>Distance: ${hotspot.distance.toFixed(1)} km</span>
               <span>ETA: ${Math.round(hotspot.duration)} min</span>
             </div>
-            <div style="background-color: #f5f5f5; padding: 8px; border-radius: 6px; margin-top: 8px;">
+            <div style="background-color: #FFF3E0; padding: 8px; border-radius: 6px; margin-top: 8px;">
               <div style="display: flex; align-items: center; justify-content: space-between;">
                 <span style="font-size: 13px; font-weight: bold;">Estimated Fare:</span>
                 <span style="font-size: 13px;">₹${fare}</span>
               </div>
               <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
-                <span style="font-size: 14px; font-weight: bold; color: #388E3C;">Estimated Profit:</span>
-                <span style="font-size: 14px; font-weight: bold; color: #388E3C;">₹${profit}</span>
+                <span style="font-size: 14px; font-weight: bold; color: #E65100;">Estimated Profit:</span>
+                <span style="font-size: 14px; font-weight: bold; color: #E65100;">₹${profit}</span>
               </div>
               ${surgeMultiplier > 1.15 ? `<div style="font-size: 11px; color: #E53935; text-align: right; margin-top: 4px;">Includes ${Math.round((surgeMultiplier-1)*100)}% surge pricing</div>` : ''}
             </div>
@@ -588,11 +635,11 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
       attributionControl: false
     });
 
-    // Add navigation controls
-    map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
+    // Add navigation controls (moved to top-left to avoid overlap with hotspot sidebar)
+    map.current.addControl(new mapboxgl.NavigationControl(), 'top-left');
     
     // Add attribution control
-    map.current.addControl(new mapboxgl.AttributionControl({ compact: true }), 'bottom-right');
+    map.current.addControl(new mapboxgl.AttributionControl({ compact: true }), 'bottom-left');
 
     // Add current location marker for Vijarahalli
     const vijarahalliMarkerElement = document.createElement('div');
@@ -827,10 +874,10 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
       
       {/* Hotspot predictions sidebar - only shown when hotspots are available */}
       {hotspots.length > 0 && (
-        <div className="absolute top-4 right-4 bottom-4 bg-white rounded-xl shadow-lg z-10 w-72 overflow-hidden flex flex-col">
-          <div className="bg-purple-700 text-white py-3 px-4">
+        <div className="absolute top-4 right-4 bottom-4 bg-white rounded-xl shadow-lg z-10 w-72 overflow-hidden flex flex-col" style={{ maxWidth: '30%' }}>
+          <div className="bg-orange-600 text-white py-3 px-4">
             <h3 className="font-bold text-lg">Demand Hotspots</h3>
-            <p className="text-xs text-purple-200">Nearest high-demand areas from Vijarahalli</p>
+            <p className="text-xs text-orange-100">Nearest high-demand areas from Vijarahalli</p>
           </div>
           
           <div className="flex-1 overflow-auto p-3">
@@ -838,7 +885,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
               {hotspots.map((hotspot, index) => {
                 const isSelected = selectedHotspot === hotspot;
                 const demandScore = Math.round(hotspot.demand_score * 100);
-                const demandColor = getDemandColor(hotspot.demand_score);
                 const demandLevel = getDemandLevel(hotspot.demand_score);
                 const profit = calculateProfit(hotspot);
                 
@@ -847,7 +893,7 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
                     key={index} 
                     className={`
                       p-3 rounded-lg cursor-pointer transition-all
-                      ${isSelected ? 'bg-purple-50 border border-purple-200' : 'bg-gray-50 hover:bg-gray-100'} 
+                      ${isSelected ? 'bg-orange-50 border border-orange-200' : 'bg-gray-50 hover:bg-gray-100'} 
                     `}
                     onClick={() => flyToHotspot(hotspot)}
                   >
@@ -856,8 +902,8 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
                       <div 
                         className="text-xs font-bold px-2 py-1 rounded-full"
                         style={{ 
-                          backgroundColor: `${demandColor}20`, 
-                          color: demandColor 
+                          backgroundColor: '#FFF3E0', 
+                          color: '#FF9800' 
                         }}
                       >
                         {demandScore}%
@@ -865,8 +911,8 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
                     </div>
                     <div className="text-xs text-gray-500 mt-1">{hotspot.description}</div>
                     <div className="flex items-center mt-2">
-                      <div className="h-1.5 w-1.5 rounded-full mr-1.5" style={{ backgroundColor: demandColor }}></div>
-                      <span className="text-xs" style={{ color: demandColor }}>{demandLevel} Demand</span>
+                      <div className="h-1.5 w-1.5 rounded-full mr-1.5" style={{ backgroundColor: '#FF9800' }}></div>
+                      <span className="text-xs" style={{ color: '#FF9800' }}>{demandLevel} Demand</span>
                     </div>
                     
                     <div className="mt-3 pt-3 border-t border-gray-200">
@@ -887,9 +933,9 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
                         </div>
                       </div>
                       
-                      <div className="mt-2 bg-green-50 p-2 rounded-md flex justify-between items-center">
-                        <span className="text-xs font-medium text-green-800">Est. Profit:</span>
-                        <span className="text-sm font-bold text-green-700">₹{profit}</span>
+                      <div className="mt-2 bg-orange-50 p-2 rounded-md flex justify-between items-center">
+                        <span className="text-xs font-medium text-orange-800">Est. Profit:</span>
+                        <span className="text-sm font-bold text-orange-600">₹{profit}</span>
                       </div>
                     </div>
                   </div>

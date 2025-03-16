@@ -17,7 +17,7 @@ export interface PlacePrediction extends Place {
 }
 
 // Bangalore locations with coordinates and descriptions
-const BANGALORE_PLACES: Place[] = [
+export const BANGALORE_PLACES: Place[] = [
   { name: 'Mahadevapura', latitude: 12.9898, longitude: 77.6897, description: 'IT hub with major tech parks and residential areas' },
   { name: 'B. T. M. Layout', latitude: 12.9166, longitude: 77.6101, description: 'Bustling residential and commercial area' },
   { name: 'Bommanahalli', latitude: 12.8998, longitude: 77.6179, description: 'Growing commercial hub with residential neighborhoods' },
