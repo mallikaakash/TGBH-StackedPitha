@@ -346,7 +346,7 @@ const calculateCompatibilityScore = (
   
   // Add ride type specific reasons
   if (rideType.startsWith('HD_')) {
-    reasonParts.push("High demand means better earnings");
+    reasonParts.push("High demand means better earnings through incentives and challenge completion");
   } else if (rideType === RideType.LD_LS) {
     reasonParts.push("Not many drivers in this area");
   }

@@ -74,7 +74,7 @@ export const getMapboxDistance = async (origin: Coordinates, destination: Coordi
   } catch (error) {
     console.error('Error calculating Mapbox distance:', error);
     const directDistance = calculateDirectDistance(origin, destination);
-    return directDistance * 1.05;
+    return directDistance;
   }
 };
 
@@ -131,15 +131,15 @@ const calculateDriverIncentive = (
  */
 const getDemandSupplyMultiplier = (rideType: string): number => {
   // Enhanced multipliers based on matrix position
-  if (rideType === 'HD_LS') return 1.4; // Highest surge
-  if (rideType === 'HD_MS') return 1.3;
-  if (rideType === 'HD_HS') return 1.2;
+  if (rideType === 'HD_LS') return 1.0; // Highest surge
+  if (rideType === 'HD_MS') return 1.0;
+  if (rideType === 'HD_HS') return 1.0;
   
-  if (rideType === 'MD_LS') return 1.2;
-  if (rideType === 'MD_MS') return 1.1;
-  if (rideType === 'MD_HS') return 1.05;
+  if (rideType === 'MD_LS') return 1.0;
+  if (rideType === 'MD_MS') return 1.0;
+  if (rideType === 'MD_HS') return 1.0;
   
-  if (rideType === 'LD_LS') return 1.05;
+  if (rideType === 'LD_LS') return 1.0;
   if (rideType === 'LD_MS') return 1.0;
   if (rideType === 'LD_HS') return 1.0; // No surge for low demand, high supply
   
@@ -215,8 +215,7 @@ export const calculateDynamicFare = async (
   // Total fare includes the 75% of surge
   const totalFare = Math.floor(totalBeforeIncentive + fareIncentiveComponent);
   
-  // Platform fee (20% of total fare)
-  const platformFee = Math.floor(totalFare * 0.20);
+  const platformFee = 0;
   
   // Calculate realistic profit: fare - platform fee - fuel cost
   const estimatedProfit = Math.floor(totalFare - platformFee - fuelCost);
@@ -295,8 +294,8 @@ export const calculateDriverProfit = (
   distance: number
 ): number => {
   // Platform fee (percentage taken by the platform)
-  const platformFeePercentage = 0.20; // 20% platform fee
-  
+  const platformFeePercentage = 0; 
+
   // Estimate operational expenses (fuel, maintenance, etc.)
   const operationalExpensePerKm = 5; // Rupees per km
   const operationalExpenses = distance * operationalExpensePerKm;

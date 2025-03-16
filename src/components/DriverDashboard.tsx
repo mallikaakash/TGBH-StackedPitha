@@ -16,15 +16,14 @@ interface DriverDashboardProps {
 const DriverDashboard: React.FC<DriverDashboardProps> = ({ center }) => {
   const [activeTab, setActiveTab] = useState<string>('overview');
   const [timeFilter, setTimeFilter] = useState<string>('week');
-  const [totalPoints, setTotalPoints] = useState<number>(3); // Initialize with 5 points
+  const [totalPoints, setTotalPoints] = useState<number>(3);
   
-  // Mock data - would be fetched from API in a real implementation
   const driverData = {
     name: "Venkatesh Rao",
     id: "#BLR2345",
     rating: 4.7,
     reviews: 987,
-    driverScore: 8.2, // Added driver score (0-10)
+    driverScore: 8.2,
     persona: {
       type: "Long Haul Specialist",
       traits: [
@@ -63,7 +62,6 @@ const DriverDashboard: React.FC<DriverDashboardProps> = ({ center }) => {
       week: 6200,
       month: 24500,
       pending: 850,
-      // Added new fields
       netProfit: {
         today: 720,
         week: 4680,
@@ -196,7 +194,6 @@ const DriverDashboard: React.FC<DriverDashboardProps> = ({ center }) => {
     ]
   };
 
-  // Function to get active filter data
   const getFilteredEarnings = () => {
     switch(timeFilter) {
       case 'today':
@@ -230,7 +227,6 @@ const DriverDashboard: React.FC<DriverDashboardProps> = ({ center }) => {
 
   return (
     <div className="bg-slate-50 min-h-screen pb-20">
-      {/* Top Header with Balance Overview */}
       <div className="bg-blue-600 text-white p-4 md:p-6">
         <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
           <div>
@@ -244,7 +240,6 @@ const DriverDashboard: React.FC<DriverDashboardProps> = ({ center }) => {
         </div>
       </div>
 
-      {/* Quick Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 md:p-6">
         <div className="bg-white rounded-lg shadow-sm p-3 md:p-4 border border-slate-100">
           <div className="flex items-center justify-between">
@@ -290,11 +285,8 @@ const DriverDashboard: React.FC<DriverDashboardProps> = ({ center }) => {
         </div>
       </div>
 
-      {/* Main Content Area */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 p-4 md:p-6">
-        {/* Left Column */}
         <div className="md:col-span-2 space-y-4 md:space-y-6">
-          {/* No Cancellation Streak */}
           <div className="bg-gradient-to-r from-emerald-500 to-emerald-700 rounded-lg shadow-sm p-4 md:p-6 text-white">
             <div className="flex flex-col md:flex-row justify-between items-center mb-3">
               <div className="flex items-center">
@@ -323,7 +315,6 @@ const DriverDashboard: React.FC<DriverDashboardProps> = ({ center }) => {
             </p>
           </div>
         
-          {/* Earnings Overview */}
           <div className="bg-white rounded-lg shadow-sm border border-slate-100 p-4 md:p-6">
             <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-3 mb-4">
               <h2 className="text-lg md:text-xl font-bold text-slate-800">Earnings Overview</h2>
@@ -372,7 +363,6 @@ const DriverDashboard: React.FC<DriverDashboardProps> = ({ center }) => {
             </div>
           </div>
 
-          {/* Daily Challenges */}
           <div className="bg-white rounded-lg shadow-sm border border-slate-100 p-4 md:p-6">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg md:text-xl font-bold text-slate-800">Daily Challenges</h2>
@@ -421,7 +411,6 @@ const DriverDashboard: React.FC<DriverDashboardProps> = ({ center }) => {
             </div>
           </div>
 
-          {/* Trip Statistics */}
           <div className="bg-white rounded-lg shadow-sm border border-slate-100 p-4 md:p-6">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg md:text-xl font-bold text-slate-800">Trip Statistics</h2>
@@ -464,9 +453,7 @@ const DriverDashboard: React.FC<DriverDashboardProps> = ({ center }) => {
           </div>
         </div>
 
-        {/* Right Column */}
         <div className="space-y-4 md:space-y-6">
-          {/* Driver Profile Card */}
           <div className="bg-white rounded-lg shadow-sm border border-slate-100 p-4 md:p-6">
             <div className="flex items-center space-x-4 mb-2">
               <div className="h-14 w-14 md:h-16 md:w-16 bg-blue-50 rounded-full flex items-center justify-center flex-shrink-0">
@@ -483,7 +470,6 @@ const DriverDashboard: React.FC<DriverDashboardProps> = ({ center }) => {
               </div>
             </div>
             
-            {/* Driver Score */}
             <div className="mb-4 mt-3 bg-blue-50 rounded-lg p-3">
               <div className="flex justify-between items-center mb-1">
                 <p className="text-sm font-semibold text-slate-700">Driver Score</p>
@@ -498,7 +484,6 @@ const DriverDashboard: React.FC<DriverDashboardProps> = ({ center }) => {
               <p className="text-xs text-slate-500">Based on your ride completions, challenges, and high-priority rides</p>
             </div>
             
-            {/* Driver Persona */}
             <div className="mb-4">
               <div className="flex items-center mb-2">
                 <Medal className="text-amber-500 mr-2" size={16} />
@@ -540,7 +525,6 @@ const DriverDashboard: React.FC<DriverDashboardProps> = ({ center }) => {
             </div>
           </div>
           
-          {/* Daily Subscription Card */}
           <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg shadow-sm p-4 md:p-6 text-white">
             <div className="flex justify-between items-start mb-4">
               <h2 className="text-base md:text-lg font-bold">Daily Subscription</h2>
@@ -561,7 +545,6 @@ const DriverDashboard: React.FC<DriverDashboardProps> = ({ center }) => {
             </div>
           </div>
           
-          {/* Driver Benefits Card */}
           <div className="bg-white rounded-lg shadow-sm border border-slate-100 p-4 md:p-6">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-base md:text-lg font-bold text-slate-800">Driver Benefits</h2>
@@ -600,7 +583,6 @@ const DriverDashboard: React.FC<DriverDashboardProps> = ({ center }) => {
 
       {activeTab === 'overview' && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          {/* Points Card - Display driver's accumulated points */}
           <div className="bg-gradient-to-br from-indigo-500 to-indigo-700 text-white p-5 rounded-xl shadow-md">
             <div className="flex items-center mb-4">
               <Award className="mr-3" size={24} />
@@ -616,7 +598,6 @@ const DriverDashboard: React.FC<DriverDashboardProps> = ({ center }) => {
               </div>
             </div>
             
-            {/* Progress bar for next reward */}
             <div className="mt-4">
               <div className="flex justify-between text-xs mb-1">
                 <span>Progress</span>
@@ -631,7 +612,6 @@ const DriverDashboard: React.FC<DriverDashboardProps> = ({ center }) => {
             </div>
           </div>
           
-          {/* Keep other cards here */}
         </div>
       )}
     </div>

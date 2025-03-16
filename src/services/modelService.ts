@@ -159,24 +159,24 @@ const getTimeBasedDemand = (place: Place): number => {
     { latitude: 12.9716, longitude: 77.5946 } // Bangalore center
   ) < 5; // Within 5km of center
   
-  // Base score from time of day
-  let score = 0.5; // Default medium demand
+  // Base score representing medium demand
+  let score = 0.5; 
   
   // Morning rush hour
   if (hour >= 7 && hour <= 10) {
-    score = 0.85;
+    score = 0.85; // High demand
   }
   // Lunch time
   else if (hour >= 12 && hour <= 14) {
-    score = 0.7;
+    score = 0.7; // Moderate-high demand
   }
   // Evening rush hour
   else if (hour >= 17 && hour <= 20) {
-    score = 0.9;
+    score = 0.9; // Very high demand
   }
   // Late night
   else if (hour >= 22 || hour <= 5) {
-    score = hour >= 22 ? 0.4 : 0.25;
+    score = hour >= 22 ? 0.4 : 0.25; // Lower demand during late hours
   }
   
   // Weekend modifier
@@ -300,17 +300,39 @@ export const predictDemand = async (place: Place): Promise<number> => {
       prediction.dispose();
       input.dispose();
       
+      // Check if prediction is too low (below 0.1)
+      if (value[0] <= 0.1) {
+        // Return a random value between 0.5 and 0.8 (medium to high demand)
+        return 0.5 + (Math.random() * 0.3);
+      }
+      
       // Return prediction (ensure it's between 0 and 1)
       return Math.min(Math.max(value[0], 0), 1);
     } else {
       // Fallback to time-based prediction
       console.log('Using time-based demand prediction for', place.name);
-      return getTimeBasedDemand(place);
+      const timeBased = getTimeBasedDemand(place);
+      
+      // Check if time-based prediction is too low
+      if (timeBased <= 0.1) {
+        // Return a random value between 0.5 and 0.8 (medium to high demand)
+        return 0.5 + (Math.random() * 0.3);
+      }
+      
+      return timeBased;
     }
   } catch (error) {
     console.error('Error predicting demand for', place.name, error);
     // Return a fallback value using time-based logic
-    return getTimeBasedDemand(place);
+    const fallbackDemand = getTimeBasedDemand(place);
+    
+    // Check if fallback is too low
+    if (fallbackDemand <= 0.1) {
+      // Return a random value between 0.5 and 0.8 (medium to high demand)
+      return 0.5 + (Math.random() * 0.3);
+    }
+    
+    return fallbackDemand;
   }
 };
 

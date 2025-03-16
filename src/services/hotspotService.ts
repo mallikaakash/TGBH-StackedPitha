@@ -19,10 +19,6 @@ interface PredictionResponse {
   };
 }
 
-/**
- * Frontend-only implementation of hotspot prediction
- * Generates sample hotspots around the driver location
- */
 export const predictHotspots = async (driverLocation: DriverLocation): Promise<PredictionResponse> => {
   // Log the driver location for debugging
   console.log('Predicting hotspots for location:', driverLocation);
@@ -52,11 +48,6 @@ export const predictHotspots = async (driverLocation: DriverLocation): Promise<P
   };
 };
 
-/**
- * Calculate time of day factor - simulates higher demand during rush hours
- * @param hour Current hour (0-23)
- * @returns Factor between 0-1
- */
 function calculateTimeOfDayFactor(hour: number): number {
   // Morning rush (7-9 AM)
   if (hour >= 7 && hour <= 9) {
@@ -80,16 +71,10 @@ function calculateTimeOfDayFactor(hour: number): number {
   }
 }
 
-/**
- * Generate realistic hotspots around the driver location
- * @param driverLocation Driver's current location
- * @param timeOfDayFactor Factor based on time of day
- * @returns Array of hotspot predictions
- */
+
 function generateHotspots(driverLocation: DriverLocation, timeOfDayFactor: number): HotspotResponse[] {
   const { latitude, longitude } = driverLocation;
   
-  // Bangalore-specific locations with offsets from current location
   const bangaloreLocations = [
     { 
       name: 'Indiranagar', 
@@ -151,7 +136,6 @@ function generateHotspots(driverLocation: DriverLocation, timeOfDayFactor: numbe
   
   // Add time-of-day and random factors
   return bangaloreLocations.map(location => {
-    // Calculate time-specific factor (morning boost for business districts, evening boost for entertainment areas)
     let timeBoost = 1.0;
     const hour = new Date().getHours();
     

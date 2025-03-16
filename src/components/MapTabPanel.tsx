@@ -17,7 +17,6 @@ import {
   POI_CATEGORIES
 } from '@/utils/mapboxService';
 
-// Driver profile data (hardcoded for this implementation)
 const DRIVER_PROFILE = {
   id: "#BLR2345",
   rating: 4.7,
@@ -46,7 +45,6 @@ const DRIVER_PROFILE = {
   }
 };
 
-// Language options based on Sarvam API supported languages
 const LANGUAGE_OPTIONS = [
   { code: 'en-IN', name: 'English' },
   { code: 'hi-IN', name: 'हिंदी (Hindi)' },
@@ -65,7 +63,6 @@ interface MapTabPanelProps {
   center: [number, number];
 }
 
-// Interface for prediction data with additional calculated information
 interface EnhancedPrediction {
   name: string;
   demand_score: number;
@@ -79,7 +76,6 @@ interface EnhancedPrediction {
   recommendation?: string;
 }
 
-// Interface for POI context data
 interface POIContext {
   summary: string;
   highDemandPOIs: PointOfInterest[];
@@ -88,7 +84,6 @@ interface POIContext {
 }
 
 const MapTabPanel: React.FC<MapTabPanelProps> = ({ center }) => {
-  // Set the initial map center to Vijarahalli coordinates
   const vijarahalliCenter: [number, number] = [VIJARAHALLI_LOCATION.longitude, VIJARAHALLI_LOCATION.latitude];
   
   const [currentLocation, setCurrentLocation] = useState({ 
@@ -104,16 +99,13 @@ const MapTabPanel: React.FC<MapTabPanelProps> = ({ center }) => {
   const [showGuidance, setShowGuidance] = useState(false);
   const [poiContext, setPOIContext] = useState<POIContext | null>(null);
   
-  // Language translation state
   const [selectedLanguage, setSelectedLanguage] = useState<string>('en-IN');
   const [translatedGuidance, setTranslatedGuidance] = useState<string>('');
   const [isTranslating, setIsTranslating] = useState<boolean>(false);
   const [translationError, setTranslationError] = useState<string | null>(null);
   const [apiTested, setApiTested] = useState<boolean>(false);
 
-  // Test the Sarvam API on component load
   useEffect(() => {
-    // Simple test to verify the API is working
     const testTranslationApi = async () => {
       try {
         const testText = "Hello, this is a test message.";
@@ -121,7 +113,7 @@ const MapTabPanel: React.FC<MapTabPanelProps> = ({ center }) => {
         const requestBody = JSON.stringify({
           input: testText,
           source_language_code: "en-IN",
-          target_language_code: "hi-IN", // Test with Hindi
+          target_language_code: "hi-IN",
           speaker_gender: "Male",
           mode: "formal",
           model: "mayura:v1",
@@ -158,12 +150,10 @@ const MapTabPanel: React.FC<MapTabPanelProps> = ({ center }) => {
     testTranslationApi();
   }, []);
 
-  // Handle location updates from the Map component - but keep Vajrahalli as the fixed base
   const handleLocationUpdate = (location: { lat: number; lng: number }) => {
     console.log('Map moved, but keeping Vajrahalli as fixed base for calculations');
   };
 
-  // Generate markdown from predictions for Gemini API - more balanced for accessibility and usefulness
   const generateMarkdown = (predictions: EnhancedPrediction[], poiData: POIContext | null): string => {
     const timestamp = new Date().toLocaleString();
     const currentHour = new Date().getHours();
@@ -175,7 +165,6 @@ const MapTabPanel: React.FC<MapTabPanelProps> = ({ center }) => {
     
     let markdown = `# Driver Guidance\n\n`;
     
-    // More detailed but still accessible intro
     markdown += `## Current Conditions\n`;
     markdown += `- Time: ${new Date().toLocaleTimeString()}\n`;
     markdown += `- Day: ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date().getDay()]}\n`;
@@ -183,13 +172,11 @@ const MapTabPanel: React.FC<MapTabPanelProps> = ({ center }) => {
     markdown += `- Traffic: ${currentHour >= 8 && currentHour <= 10 || currentHour >= 17 && currentHour <= 19 ? "Heavy" : "Normal"}\n`;
     markdown += `- Weather: ${Math.random() > 0.2 ? "Clear" : "Rainy"}\n\n`;
     
-    // More useful driver info
     markdown += `## Driver Profile\n`;
     markdown += `- Driver type: ${DRIVER_PROFILE.persona.type}\n`;
     markdown += `- Strengths: Long trips, Off-peak hours, Reliable service\n`;
     markdown += `- Rating: ${DRIVER_PROFILE.rating} stars (${DRIVER_PROFILE.reviews} reviews)\n\n`;
     
-    // More detailed POI info if available
     if (poiData && (poiData.highDemandPOIs.length > 0 || poiData.timeSensitivePOIs.length > 0)) {
       markdown += `## Nearby Places with Customers\n\n`;
       
@@ -218,7 +205,6 @@ const MapTabPanel: React.FC<MapTabPanelProps> = ({ center }) => {
       }
     }
     
-    // Add top 5 areas with high demand with more useful details
     markdown += `## Best Areas for Rides\n\n`;
     const topAreas = predictions.slice(0, 5);
     topAreas.forEach((pred, index) => {
@@ -246,14 +232,12 @@ const MapTabPanel: React.FC<MapTabPanelProps> = ({ center }) => {
     return markdown;
   };
 
-  // Categorize demand and competition levels
   const enhancePredictions = (predictions: any[]): EnhancedPrediction[] => {
     return predictions.map(pred => {
       let demand_category = 'Medium';
       if (pred.demand_score >= 0.7) demand_category = 'High';
       else if (pred.demand_score <= 0.4) demand_category = 'Low';
       
-      // Estimate competition level - higher demand usually means higher competition
       let competition_level = 'Medium';
       if (pred.demand_score >= 0.8) competition_level = 'High';
       else if (pred.demand_score <= 0.3) competition_level = 'Low';
@@ -266,7 +250,6 @@ const MapTabPanel: React.FC<MapTabPanelProps> = ({ center }) => {
     });
   };
 
-  // Call Gemini API to generate driver guidance
   const generateDriverGuidance = async (markdownPrompt: string) => {
     setIsGeneratingGuidance(true);
     
@@ -306,18 +289,15 @@ const MapTabPanel: React.FC<MapTabPanelProps> = ({ center }) => {
       const data = await response.json();
       console.log('Gemini API full response:', data);
       
-      // Extract the generated text from the response
       const generatedText = data.candidates[0]?.content?.parts[0]?.text || 'No guidance generated';
       console.log('Extracted text content from Gemini:', generatedText);
       
-      // Log character count to check for truncation
       console.log('Content length:', generatedText.length, 'characters');
       
-      // Log content sections to check for completeness
       const sections = generatedText.split('##').map((section: string) => section.trim());
       console.log('Content sections:', sections.length);
       sections.forEach((section: string, index: number) => {
-        if (index > 0) { // Skip the first split which is just the title
+        if (index > 0) {
           const sectionTitle = section.split('\n')[0];
           console.log(`Section ${index}: ${sectionTitle} (${section.length} chars)`);
         }
@@ -325,18 +305,15 @@ const MapTabPanel: React.FC<MapTabPanelProps> = ({ center }) => {
       
       setAiGuidance(generatedText);
       
-      // If a language other than English is selected, translate the content
       if (selectedLanguage !== 'en-IN') {
         translateGuidance(generatedText, selectedLanguage);
       } else {
-        // Reset any previous translation
         setTranslatedGuidance('');
       }
       
       setShowGuidance(true);
     } catch (error) {
       console.error('Error calling Gemini API:', error);
-      // Fallback content in case of API failure - balanced between simplicity and usefulness
       setAiGuidance(`
 # Driving Guide
 
@@ -362,9 +339,7 @@ ${new Date().getHours() >= 17 && new Date().getHours() <= 19 ?
   "Focus on shopping malls and entertainment spots like Phoenix Marketcity or Forum Mall."}
       `);
       
-      // If a non-English language is selected, translate the fallback content too
       if (selectedLanguage !== 'en-IN') {
-        // Use a slight delay to ensure the aiGuidance state is updated first
         setTimeout(() => translateGuidance(aiGuidance, selectedLanguage), 100);
       } else {
         setTranslatedGuidance('');
@@ -376,25 +351,20 @@ ${new Date().getHours() >= 17 && new Date().getHours() <= 19 ?
     }
   };
 
-  // Load predictions for the next hour based on current location
   const loadPredictions = async () => {
     setLoading(true);
     
     try {
       console.log('Loading predictions for Vajrahalli:', VIJARAHALLI_LOCATION);
       
-      // Test which prediction method is being used
       const model = await loadModel();
       console.log('Prediction method being used:', model ? 'TensorFlow.js Model' : 'Time-based heuristic fallback');
       
-      // Fetch POI context data in parallel with predictions
       const poiContextPromise = getPOIContextualSummary(VIJARAHALLI_LOCATION);
       
-      // Always use Vajrahalli as the base location for predictions
       const predictions = await getNearestPlacesWithDemand(VIJARAHALLI_LOCATION);
       console.log('Received predictions for 6 closest places:', predictions);
       
-      // Log detailed information about each prediction
       console.log('===== DETAILED PREDICTION INFORMATION FOR 6 CLOSEST PLACES =====');
       predictions.forEach((prediction, index) => {
         console.log(`Prediction ${index + 1}: ${prediction.name}`);
@@ -406,13 +376,11 @@ ${new Date().getHours() >= 17 && new Date().getHours() <= 19 ?
         console.log('----------------------------------------');
       });
       
-      // Get and log predictions for ALL places in BANGALORE_PLACES
       console.log('===== GETTING PREDICTIONS FOR ALL BANGALORE PLACES =====');
       const allPredictions = await Promise.all(
         BANGALORE_PLACES.map(async (place: Place) => {
           try {
-            // Calculate direct distance using Haversine formula
-            const R = 6371; // Earth's radius in km
+            const R = 6371;
             const lat1 = VIJARAHALLI_LOCATION.latitude * Math.PI/180;
             const lat2 = place.latitude * Math.PI/180;
             const dLat = (place.latitude - VIJARAHALLI_LOCATION.latitude) * Math.PI/180;
@@ -424,13 +392,10 @@ ${new Date().getHours() >= 17 && new Date().getHours() <= 19 ?
             const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
             const directDistance = R * c;
             
-            // Predict demand for this place
             const demand_score = await predictDemand(place);
             
-            // Estimate duration (assuming average speed of 30 km/h in urban areas)
-            // Multiply direct distance by 1.3 to approximate road distance
             const estimatedRoadDistance = directDistance * 1.3;
-            const duration = estimatedRoadDistance / 30 * 60; // Convert to minutes
+            const duration = estimatedRoadDistance / 30 * 60;
             
             return {
               name: place.name,
@@ -445,7 +410,7 @@ ${new Date().getHours() >= 17 && new Date().getHours() <= 19 ?
             console.error(`Error processing prediction for ${place.name}:`, error);
             return {
               name: place.name,
-              demand_score: 0.5, // Fallback value
+              demand_score: 0.5,
               latitude: place.latitude,
               longitude: place.longitude,
               description: place.description
@@ -454,7 +419,6 @@ ${new Date().getHours() >= 17 && new Date().getHours() <= 19 ?
         })
       );
       
-      // Sort by demand score (highest first)
       const sortedPredictions = allPredictions.sort((a, b) => b.demand_score - a.demand_score);
       
       console.log('===== PREDICTIONS FOR ALL BANGALORE PLACES =====');
@@ -470,23 +434,19 @@ ${new Date().getHours() >= 17 && new Date().getHours() <= 19 ?
         console.log('----------------------------------------');
       });
       
-      // Enhance predictions with categorization
       const enhancedPredictions = enhancePredictions(sortedPredictions);
       
-      // Wait for POI context data
       const poiData = await poiContextPromise;
       setPOIContext(poiData);
       
       console.log('===== POI CONTEXT DATA =====');
       console.log(poiData);
       
-      // Generate markdown for Gemini API - include POI data
       const markdown = generateMarkdown(enhancedPredictions, poiData);
       setMarkdownData(markdown);
       console.log('===== MARKDOWN FOR GEMINI API =====');
       console.log(markdown);
       
-      // Store only the 6 closest places for map display
       setHotspots(predictions);
       setShowPredictions(true);
     } catch (error) {
@@ -496,14 +456,11 @@ ${new Date().getHours() >= 17 && new Date().getHours() <= 19 ?
     }
   };
 
-  // Process HTML content for display
   const processContentForDisplay = (content: string) => {
     return content
       .replace(/\n/g, '<br />')
-      // Main title
       .replace(/\# (.*?)(<br \/>|$)/g, '<h1 class="text-3xl font-bold text-purple-800 mb-6 pb-2 border-b-2 border-purple-200 mt-2">$1</h1>')
       
-      // Section headings with accent bar
       .replace(/\#\# (.*?)(<br \/>|$)/g, 
         '<div class="mt-8 mb-6">' +
           '<div class="bg-purple-700 h-1 w-16 mb-2 rounded-full"></div>' +
@@ -511,10 +468,8 @@ ${new Date().getHours() >= 17 && new Date().getHours() <= 19 ?
         '</div>'
       )
       
-      // Sub-section headings
       .replace(/\#\#\# (.*?)(<br \/>|$)/g, '<h3 class="text-lg font-bold text-purple-700 mt-6 mb-3">$1</h3>')
       
-      // Location cards - match pattern for "Location Name" - details
       .replace(/\*\*([\w\s\-]+)\*\* - (.*?)(<br \/>){2,}/g, 
         '<div class="bg-white rounded-lg p-4 my-4 shadow-md border-l-4 border-purple-500">' +
           '<div class="font-bold text-lg text-purple-800 mb-1">$1</div>' +
@@ -522,11 +477,9 @@ ${new Date().getHours() >= 17 && new Date().getHours() <= 19 ?
         '</div>'
       )
       
-      // Bold and italic text
       .replace(/\*\*(.*?)\*\*/g, '<strong class="text-purple-900 font-bold">$1</strong>')
       .replace(/\*(.*?)\*/g, '<em class="text-purple-700">$1</em>')
       
-      // Numbered items with better box styling
       .replace(/(\d)\. (.*?)(<br \/>){1,2}(?=\d\.|<div class="|<h|$)/g, 
         '<div class="flex items-start my-5 guidance-item">' +
           '<div class="flex-shrink-0 bg-purple-600 rounded-full w-8 h-8 flex items-center justify-center text-white font-bold mr-3 mt-0.5">$1</div>' +
@@ -534,7 +487,6 @@ ${new Date().getHours() >= 17 && new Date().getHours() <= 19 ?
         '</div>'
       )
 
-      // Lists with better bullets and spacing
       .replace(/- (.*?)(<br \/>)(?=- |<div class="|<h|$)/g, 
         '<div class="flex items-start my-3">' +
           '<div class="flex-shrink-0 w-4 h-4 bg-purple-200 rounded-full flex items-center justify-center mt-1 mr-3">' +
@@ -544,23 +496,18 @@ ${new Date().getHours() >= 17 && new Date().getHours() <= 19 ?
         '</div>'
       )
       
-      // Fix any broken BR tags and cleanup
       .replace(/<br \/><br \/>/g, '<div class="h-4"></div>')
       .replace(/<br \/>/g, ' ');
   };
   
-  // Format translated content (simpler format for translated text)
   const formatTranslatedContent = (content: string) => {
-    // Split the content by newlines to separate different sections
     const lines = content.split('\n');
     let formattedContent = '';
     let inList = false;
     
-    // Process each line based on its content
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       
-      // Handle headers
       if (line.startsWith('# ')) {
         formattedContent += `<h1 class="text-3xl font-bold text-purple-800 mb-6 pb-2 border-b-2 border-purple-200 mt-2">${line.substring(2)}</h1>`;
       } 
@@ -570,9 +517,7 @@ ${new Date().getHours() >= 17 && new Date().getHours() <= 19 ?
           <h2 class="text-xl font-bold text-white bg-purple-700 px-4 py-2 rounded-lg inline-block">${line.substring(3)}</h2>
           </div>`;
       }
-      // Handle numbered lists
       else if (/^\d+\./.test(line)) {
-        // Extract the number
         const match = line.match(/^(\d+)\.\s*(.*)/);
         if (match) {
           const [_, number, text] = match;
@@ -582,7 +527,6 @@ ${new Date().getHours() >= 17 && new Date().getHours() <= 19 ?
           </div>`;
         }
       }
-      // Handle bullet points
       else if (line.startsWith('- ')) {
         formattedContent += `<div class="flex items-start my-3">
           <div class="flex-shrink-0 w-4 h-4 bg-purple-200 rounded-full flex items-center justify-center mt-1 mr-3">
@@ -591,7 +535,6 @@ ${new Date().getHours() >= 17 && new Date().getHours() <= 19 ?
           <div class="flex-1">${line.substring(2)}</div>
         </div>`;
       }
-      // Handle locations with bold text
       else if (line.includes('**')) {
         const boldMatch = line.match(/\*\*([^*]+)\*\*/);
         if (boldMatch) {
@@ -607,11 +550,9 @@ ${new Date().getHours() >= 17 && new Date().getHours() <= 19 ?
           }
         }
       }
-      // Regular text
       else if (line.length > 0) {
         formattedContent += `<p class="my-2">${line}</p>`;
       }
-      // Empty line
       else {
         formattedContent += `<div class="h-4"></div>`;
       }
@@ -620,10 +561,8 @@ ${new Date().getHours() >= 17 && new Date().getHours() <= 19 ?
     return formattedContent;
   };
   
-  // Translate guidance using Sarvam API
   const translateGuidance = async (text: string, targetLanguage: string) => {
     if (targetLanguage === 'en-IN') {
-      // No need to translate if target is English
       setTranslatedGuidance('');
       setTranslationError(null);
       return;
@@ -636,37 +575,28 @@ ${new Date().getHours() >= 17 && new Date().getHours() <= 19 ?
       console.log(`Translating content from English to ${targetLanguage}`);
       console.log(`Original text length: ${text.length} characters`);
       
-      // The Sarvam API has a 1000 character limit, so we need to chunk the text
-      // First, let's split the text by sections (using ## as delimiter)
       const sections = text.split(/##\s+/);
       let translatedSections: string[] = [];
       
-      // Translate the title separately (it's before the first ##)
       const title = sections[0].trim();
       let translatedTitle = '';
       
       if (title.length > 0) {
-        // Translate the title
         const titleResponse = await translateTextChunk(title, targetLanguage);
         translatedTitle = titleResponse;
         translatedSections.push(translatedTitle);
       }
       
-      // Translate each section individually
       for (let i = 1; i < sections.length; i++) {
         if (sections[i].trim().length === 0) continue;
         
-        // Add the ## prefix back for proper formatting
         const sectionText = `## ${sections[i].trim()}`;
         
-        // Check if the section is too long (over 900 chars to leave some buffer)
         if (sectionText.length > 900) {
-          // Further split into paragraphs if needed
           const paragraphs = sectionText.split('\n\n');
           let currentChunk = '';
           
           for (const paragraph of paragraphs) {
-            // If adding this paragraph would exceed the limit, translate what we have first
             if (currentChunk.length + paragraph.length > 900) {
               if (currentChunk.length > 0) {
                 const chunkResponse = await translateTextChunk(currentChunk, targetLanguage);
@@ -674,9 +604,7 @@ ${new Date().getHours() >= 17 && new Date().getHours() <= 19 ?
                 currentChunk = '';
               }
               
-              // If the paragraph itself is too long, we need to split it too
               if (paragraph.length > 900) {
-                // Split by sentences or just chunks of characters as a last resort
                 const sentences = paragraph.split(/(?<=[.!?])\s+/);
                 let sentenceChunk = '';
                 
@@ -688,9 +616,7 @@ ${new Date().getHours() >= 17 && new Date().getHours() <= 19 ?
                       sentenceChunk = '';
                     }
                     
-                    // If the sentence itself is too long (rare but possible)
                     if (sentence.length > 900) {
-                      // Just truncate it for now
                       const truncatedSentence = sentence.substring(0, 900);
                       const truncatedResponse = await translateTextChunk(truncatedSentence, targetLanguage);
                       translatedSections.push(truncatedResponse);

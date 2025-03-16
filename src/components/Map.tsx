@@ -8,7 +8,6 @@ import { getRouteDetails, Coordinates } from '../utils/mapboxService';
 import { PlacePrediction, VIJARAHALLI_LOCATION } from '../services/modelService';
 import { calculateEstimatedFare, calculateDriverProfit, getSurgeMultiplierFromDemand } from '../utils/fareCalculation';
 
-// Replace with your Mapbox access token
 mapboxgl.accessToken = 'pk.eyJ1IjoiYWFrYXNobWFsbGlrIiwiYSI6ImNtODc5cHZ0aDBlZjMyaXNlcGc3aXk5ZGMifQ.xYguCB_TJiuP55uWMAvUNA';
 
 interface MapProps {
@@ -19,7 +18,6 @@ interface MapProps {
   onLocationUpdate?: (location: { lat: number; lng: number }) => void;
 }
 
-// Type for the pulsing dot
 interface PulsingDot {
   width: number;
   height: number;
@@ -29,7 +27,6 @@ interface PulsingDot {
   render: () => boolean;
 }
 
-// Add ArrowIcon interface for the route arrows
 interface ArrowIcon {
   width: number;
   height: number;
@@ -39,7 +36,6 @@ interface ArrowIcon {
   render: () => boolean | true;
 }
 
-// Custom properties for hotspot features
 interface HotspotProperties {
   name: string;
   description: string;
@@ -49,15 +45,13 @@ interface HotspotProperties {
   estimated_profit: number;
 }
 
-// Get color for demand score
 const getDemandColor = (score: number): string => {
-  if (score >= 0.8) return '#FF9800'; // Orange for high demand
-  if (score >= 0.6) return '#FF9800'; // Orange for medium-high demand
-  if (score >= 0.4) return '#FF9800'; // Orange for medium demand
-  return '#FF9800'; // Orange for low demand too - consistent color
+  if (score >= 0.8) return '#FF9800';
+  if (score >= 0.6) return '#FF9800';
+  if (score >= 0.4) return '#FF9800';
+  return '#FF9800';
 };
 
-// Get text description for demand level
 const getDemandLevel = (score: number): string => {
   if (score >= 0.8) return 'Very High';
   if (score >= 0.6) return 'High';
@@ -75,7 +69,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
   const [routeInfo, setRouteInfo] = useState<{distance: number, duration: number} | null>(null);
   const [markers, setMarkers] = useState<mapboxgl.Marker[]>([]);
 
-  // Get user's current position if available
   const getUserLocation = () => {
     if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
@@ -86,7 +79,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
         },
         (error) => {
           console.error('Error getting user location:', error);
-          // Fallback to Vijarahalli location
           updateDriverLocation({ 
             lat: VIJARAHALLI_LOCATION.latitude, 
             lng: VIJARAHALLI_LOCATION.longitude 
@@ -95,7 +87,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
       );
     } else {
       console.log('Geolocation not available in this browser');
-      // Fallback to Vijarahalli location
       updateDriverLocation({ 
         lat: VIJARAHALLI_LOCATION.latitude, 
         lng: VIJARAHALLI_LOCATION.longitude 
@@ -103,7 +94,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
     }
   };
 
-  // Update driver location and notify parent component
   const updateDriverLocation = (location: { lat: number; lng: number }) => {
     setDriverLocation(location);
     if (onLocationUpdate) {
@@ -111,50 +101,39 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
     }
   };
 
-  // Calculate estimated profit for a hotspot
   const calculateProfit = (hotspot: PlacePrediction): number => {
-    // Calculate surge multiplier based on demand score
     const surgeMultiplier = getSurgeMultiplierFromDemand(hotspot.demand_score);
     
-    // Calculate estimated fare
     const fare = calculateEstimatedFare(hotspot.distance, hotspot.duration, surgeMultiplier);
     
-    // Calculate driver's profit
     return calculateDriverProfit(fare, hotspot.distance);
   };
 
-  // Update map with new hotspot data
   const updateMapHotspots = () => {
     if (!map.current || hotspots.length === 0) return;
     
-    // Clear existing markers
     markers.forEach(marker => marker.remove());
     setMarkers([]);
     
-    // Create new markers for each hotspot with custom popup
     const newMarkers = hotspots.map(hotspot => {
-      // Calculate estimated profit
       const profit = calculateProfit(hotspot);
       
-      // Create marker container with pulsating effect
       const markerContainer = document.createElement('div');
       markerContainer.className = 'marker-container';
       markerContainer.style.position = 'relative';
       markerContainer.style.width = '42px';
       markerContainer.style.height = '42px';
       
-      // Create pulsing ring animation
       const pulseRing = document.createElement('div');
       pulseRing.className = 'pulse-ring';
       pulseRing.style.position = 'absolute';
       pulseRing.style.width = '100%';
       pulseRing.style.height = '100%';
       pulseRing.style.borderRadius = '50%';
-      pulseRing.style.backgroundColor = '#FF9800'; // Orange color
+      pulseRing.style.backgroundColor = '#FF9800';
       pulseRing.style.opacity = '0.6';
       pulseRing.style.animation = 'pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite';
       
-      // Create marker element (inner dot)
       const markerElement = document.createElement('div');
       markerElement.className = 'custom-marker';
       markerElement.style.position = 'absolute';
@@ -163,7 +142,7 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
       markerElement.style.width = '30px';
       markerElement.style.height = '30px';
       markerElement.style.borderRadius = '50%';
-      markerElement.style.backgroundColor = '#FF9800'; // Orange color
+      markerElement.style.backgroundColor = '#FF9800';
       markerElement.style.border = '3px solid white';
       markerElement.style.boxShadow = '0 2px 8px rgba(0,0,0,0.4)';
       markerElement.style.cursor = 'pointer';
@@ -175,19 +154,15 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
       markerElement.style.fontSize = '14px';
       markerElement.style.zIndex = '2';
       
-      // Add profit label
       markerElement.innerHTML = `<span>₹${profit}</span>`;
       
-      // Add elements to container
       markerContainer.appendChild(pulseRing);
       markerContainer.appendChild(markerElement);
 
-      // Create marker
       const marker = new mapboxgl.Marker(markerContainer)
         .setLngLat([hotspot.longitude, hotspot.latitude])
         .addTo(map.current!);
         
-      // Add click event
       marker.getElement().addEventListener('click', () => {
         setSelectedHotspot(hotspot);
         displayRoute(hotspot);
@@ -198,7 +173,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
     
     setMarkers(newMarkers);
     
-    // Add CSS animation for pulsing effect
     if (!document.getElementById('pulse-animation')) {
       const styleElement = document.createElement('style');
       styleElement.id = 'pulse-animation';
@@ -220,7 +194,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
       document.head.appendChild(styleElement);
     }
     
-    // Convert hotspots to GeoJSON features with profit information
     const hotspotFeatures = hotspots.map(hotspot => {
       const profit = calculateProfit(hotspot);
       
@@ -241,17 +214,14 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
       } as Feature<Point, HotspotProperties>;
     });
     
-    // Update hotspots source if it exists, otherwise create it
     const source = map.current.getSource('hotspots');
     
     if (source) {
-      // Source exists, update data
       (source as mapboxgl.GeoJSONSource).setData({
         type: 'FeatureCollection',
         features: hotspotFeatures
       });
     } else if (hotspotFeatures.length > 0) {
-      // Source doesn't exist yet, create it if we have features
       map.current.addSource('hotspots', {
         type: 'geojson',
         data: {
@@ -260,7 +230,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
         }
       });
       
-      // Add labels for hotspots with larger, more visible text
       map.current.addLayer({
         id: 'hotspots-label',
         type: 'symbol',
@@ -283,7 +252,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
     }
   };
 
-  // Display optimized route to a hotspot
   const displayRoute = async (hotspot: PlacePrediction) => {
     if (!map.current) return;
     
@@ -291,7 +259,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
     setRouteInfo(null);
     
     try {
-      // Clean up any existing route layers and sources
       ['route-line', 'route-casing', 'route-outline', 'route-arrow'].forEach(layer => {
         if (map.current && map.current.getLayer(layer)) {
           map.current.removeLayer(layer);
@@ -304,9 +271,8 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
       
       console.log('Getting route from Vijarahalli to', hotspot.name);
       
-      // Get route details from Vijarahalli to destination using Mapbox Directions API
       const routeDetails = await getRouteDetails(
-        VIJARAHALLI_LOCATION, // Always use Vijarahalli as origin
+        VIJARAHALLI_LOCATION,
         { latitude: hotspot.latitude, longitude: hotspot.longitude }
       );
       
@@ -316,17 +282,14 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
         geometryAvailable: !!routeDetails.geometry
       });
       
-      // Save route info for display
       setRouteInfo({
         distance: routeDetails.distance,
         duration: routeDetails.duration
       });
       
-      // Update hotspot with accurate distance and duration from the route
       hotspot.distance = routeDetails.distance;
       hotspot.duration = routeDetails.duration;
       
-      // Handle the route geometry
       if (routeDetails.geometry) {
         try {
           const parsedGeometry = JSON.parse(routeDetails.geometry);
@@ -337,7 +300,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
           
           console.log('Valid route geometry with', parsedGeometry.coordinates.length, 'points');
           
-          // Add the route source with the geometry
           map.current.addSource('route', {
             type: 'geojson',
             data: {
@@ -347,7 +309,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
             }
           });
           
-          // Add a casing layer for the route (the outline)
           map.current.addLayer({
             id: 'route-outline',
             type: 'line',
@@ -363,7 +324,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
             }
           });
           
-          // Add a white casing layer for the route (the outer glow)
           map.current.addLayer({
             id: 'route-casing',
             type: 'line',
@@ -378,7 +338,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
             }
           });
           
-          // Add the route line layer
           map.current.addLayer({
             id: 'route-line',
             type: 'line',
@@ -393,7 +352,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
             }
           });
           
-          // Add direction arrows along the route
           map.current.addLayer({
             id: 'route-arrow',
             type: 'symbol',
@@ -409,7 +367,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
             }
           });
           
-          // Create arrow icon for the route if it doesn't exist
           if (!map.current.hasImage('arrow-icon')) {
             const size = 20;
             const arrowIcon: ArrowIcon = {
@@ -429,10 +386,8 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
                 const context = this.context;
                 if (!context) return false;
                 
-                // Draw an arrow
                 context.clearRect(0, 0, this.width, this.height);
                 
-                // Arrow body
                 context.beginPath();
                 context.moveTo(2, 10);
                 context.lineTo(18, 10);
@@ -440,7 +395,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
                 context.strokeStyle = '#4285F4';
                 context.stroke();
                 
-                // Arrow head
                 context.beginPath();
                 context.moveTo(18, 10);
                 context.lineTo(14, 6);
@@ -457,28 +411,22 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
             map.current.addImage('arrow-icon', arrowIcon as any, { pixelRatio: 2 });
           }
           
-          // Fit map to show both points
           const bounds = new mapboxgl.LngLatBounds();
           
-          // Include origin (Vijarahalli)
           bounds.extend([VIJARAHALLI_LOCATION.longitude, VIJARAHALLI_LOCATION.latitude]);
           
-          // Include destination (hotspot)
           bounds.extend([hotspot.longitude, hotspot.latitude]);
           
-          // Also include all points in the route to ensure the entire route is visible
           parsedGeometry.coordinates.forEach((coord: [number, number]) => {
             bounds.extend(coord);
           });
           
-          // Fit the map to the route with padding
           map.current.fitBounds(bounds, {
-            padding: { top: 100, bottom: 100, left: 100, right: 350 }, // Add extra padding on the right for the sidebar
+            padding: { top: 100, bottom: 100, left: 100, right: 350 },
             maxZoom: 15,
             duration: 1000
           });
           
-          // Update popup to include route info
           updatePopupWithRouteInfo(hotspot);
         } catch (error) {
           console.error('Error parsing route geometry:', error);
@@ -496,12 +444,10 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
     }
   };
   
-  // Fallback route display when the Mapbox API fails
   const fallbackRouteDisplay = (hotspot: PlacePrediction) => {
     if (!map.current) return;
     
     try {
-      // Create a simple straight-line route as fallback
       const routeGeometry: GeoJSON.LineString = {
         type: "LineString",
         coordinates: [
@@ -510,7 +456,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
         ]
       };
       
-      // Add the route source
       map.current.addSource('route', {
         type: 'geojson',
         data: {
@@ -520,7 +465,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
         }
       });
       
-      // Add the route casing
       map.current.addLayer({
         id: 'route-casing',
         type: 'line',
@@ -537,7 +481,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
         }
       });
       
-      // Add the route line
       map.current.addLayer({
         id: 'route-line',
         type: 'line',
@@ -554,7 +497,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
         }
       });
       
-      // Fit the map to show both points
       const bounds = new mapboxgl.LngLatBounds();
       bounds.extend([VIJARAHALLI_LOCATION.longitude, VIJARAHALLI_LOCATION.latitude]);
       bounds.extend([hotspot.longitude, hotspot.latitude]);
@@ -565,14 +507,12 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
         duration: 1000
       });
       
-      // Show the popup with route information
       updatePopupWithRouteInfo(hotspot);
     } catch (fallbackError) {
       console.error('Error displaying fallback route:', fallbackError);
     }
   };
 
-  // Update popup with route information
   const updatePopupWithRouteInfo = (hotspot: PlacePrediction) => {
     if (!map.current) return;
     
@@ -584,7 +524,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
     const demandPercent = Math.round(demandScore * 100);
     const demandLevel = getDemandLevel(demandScore);
     
-    // Calculate profit
     const surgeMultiplier = getSurgeMultiplierFromDemand(demandScore);
     const fare = calculateEstimatedFare(hotspot.distance, hotspot.duration, surgeMultiplier);
     const profit = calculateDriverProfit(fare, hotspot.distance);
@@ -622,11 +561,9 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
       .addTo(map.current);
   };
 
-  // Initialize map
   useEffect(() => {
     if (!mapContainer.current) return;
 
-    // Create the Mapbox map
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
       style: 'mapbox://styles/mapbox/streets-v12',
@@ -635,13 +572,10 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
       attributionControl: false
     });
 
-    // Add navigation controls (moved to top-left to avoid overlap with hotspot sidebar)
     map.current.addControl(new mapboxgl.NavigationControl(), 'top-left');
     
-    // Add attribution control
     map.current.addControl(new mapboxgl.AttributionControl({ compact: true }), 'bottom-left');
 
-    // Add current location marker for Vijarahalli
     const vijarahalliMarkerElement = document.createElement('div');
     vijarahalliMarkerElement.className = 'vijarahalli-marker';
     vijarahalliMarkerElement.style.width = '25px';
@@ -661,17 +595,14 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
       `))
       .addTo(map.current);
 
-    // Add pulsing dot effect for current location
     const size = 200;
     
-    // Implementation of pulsing dot
     const pulsingDot: PulsingDot = {
       width: size,
       height: size,
       data: new Uint8ClampedArray(size * size * 4),
       context: null,
       
-      // Get rendering context for the map canvas
       onAdd: function() {
         const canvas = document.createElement('canvas');
         canvas.width = this.width;
@@ -679,7 +610,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
         this.context = canvas.getContext('2d');
       },
       
-      // Called once before every frame where the icon will be used
       render: function() {
         const duration = 1500;
         const t = (performance.now() % duration) / duration;
@@ -690,7 +620,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
         
         if (!context) return true;
         
-        // Draw the outer circle
         context.clearRect(0, 0, this.width, this.height);
         context.beginPath();
         context.arc(
@@ -703,7 +632,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
         context.fillStyle = `rgba(52, 152, 219, ${1 - t})`;
         context.fill();
         
-        // Draw the inner circle
         context.beginPath();
         context.arc(
           this.width / 2,
@@ -718,7 +646,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
         context.fill();
         context.stroke();
         
-        // Update this image's data with data from the canvas
         this.data = context.getImageData(
           0,
           0,
@@ -726,17 +653,13 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
           this.height
         ).data;
         
-        // Return true to keep the map repainting
         return true;
       }
     };
 
-    // When map is loaded, add the pulsing dot and hotspots
     map.current.on('load', () => {
-      // Add pulsing dot image
       map.current?.addImage('pulsing-dot', pulsingDot as any, { pixelRatio: 2 });
       
-      // Add source for pulsing dot
       map.current?.addSource('dot-point', {
         type: 'geojson',
         data: {
@@ -754,7 +677,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
         }
       });
       
-      // Add layer for pulsing dot
       map.current?.addLayer({
         id: 'layer-with-pulsing-dot',
         type: 'symbol',
@@ -765,7 +687,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
         }
       });
 
-      // Add a label for Vijarahalli
       map.current?.addSource('vijarahalli-label', {
         type: 'geojson',
         data: {
@@ -799,21 +720,18 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
       });
     });
 
-    // Cleanup when component unmounts
     return () => {
       if (map.current) {
         map.current.remove();
         map.current = null;
       }
     };
-  }, []); // Empty dependency array so this only runs once on mount
+  }, []);
 
-  // Update map when hotspots change
   useEffect(() => {
     updateMapHotspots();
   }, [hotspots]);
 
-  // Function to fly to a hotspot
   const flyToHotspot = (hotspot: PlacePrediction) => {
     if (!map.current) return;
     
@@ -826,7 +744,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
     
     setSelectedHotspot(hotspot);
     
-    // Display route to the hotspot
     displayRoute(hotspot);
   };
 
@@ -834,7 +751,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
     <div className="w-full h-full relative rounded-3xl shadow-inner">
       <div ref={mapContainer} className="w-full h-full rounded-3xl"/>
       
-      {/* Loading indicators */}
       {loading && (
         <div className="absolute top-4 left-4 bg-white p-2 rounded shadow z-10">
           <div className="flex items-center">
@@ -853,7 +769,6 @@ const Map: React.FC<MapProps> = ({ center, zoom, hotspots, loading, onLocationUp
         </div>
       )}
       
-      {/* Button to return to Vijarahalli */}
       <button 
         className="absolute bottom-24 right-4 bg-white p-2 rounded-full shadow-md z-10 hover:bg-gray-100"
         onClick={() => {
