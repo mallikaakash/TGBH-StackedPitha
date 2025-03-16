@@ -16,7 +16,7 @@ interface DriverDashboardProps {
 const DriverDashboard: React.FC<DriverDashboardProps> = ({ center }) => {
   const [activeTab, setActiveTab] = useState<string>('overview');
   const [timeFilter, setTimeFilter] = useState<string>('week');
-  const [totalPoints, setTotalPoints] = useState<number>(5); // Initialize with 5 points
+  const [totalPoints, setTotalPoints] = useState<number>(3); // Initialize with 5 points
   
   // Mock data - would be fetched from API in a real implementation
   const driverData = {
@@ -98,16 +98,16 @@ const DriverDashboard: React.FC<DriverDashboardProps> = ({ center }) => {
     dailyChallenges: [
       {
         title: "Daily Income Goal",
-        description: "Complete 7 trips with profit of ₹500+",
-        reward: "₹100 bonus",
+        description: "Complete 7 trips with total profit of ₹500+",
+        reward: "5 points bonus",
         progress: 5,
         total: 7,
         type: "essential"
       },
       {
         title: "Long Distance Champion", 
-        description: "Complete 3 trips over 10km distance",
-        reward: "₹150 bonus",
+        description: "Complete 3 High Demand Trips",
+        reward: "₹50 extra bonus ",
         progress: 2,
         total: 3,
         type: "persona"
@@ -115,7 +115,7 @@ const DriverDashboard: React.FC<DriverDashboardProps> = ({ center }) => {
       {
         title: "Evening Rush Expert", 
         description: "Complete 4 trips during 5-8 PM",
-        reward: "₹120 bonus",
+        reward: "5 points bonus",
         progress: 1,
         total: 4,
         type: "persona"
@@ -620,12 +620,12 @@ const DriverDashboard: React.FC<DriverDashboardProps> = ({ center }) => {
             <div className="mt-4">
               <div className="flex justify-between text-xs mb-1">
                 <span>Progress</span>
-                <span>{(totalPoints || 5)}/10 points</span>
+                <span>{(totalPoints || 3)}/10 points</span>
               </div>
               <div className="w-full bg-indigo-800/40 rounded-full h-2">
                 <div 
                   className="bg-white h-2 rounded-full" 
-                  style={{ width: `${Math.min(((totalPoints || 5) / 10) * 100, 100)}%` }}
+                  style={{ width: `${Math.min(((totalPoints || 3) / 10) * 100, 100)}%` }}
                 ></div>
               </div>
             </div>
